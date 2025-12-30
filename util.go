@@ -46,6 +46,14 @@ func transform[T, U any](ts []T, f func(T) U) []U {
 	return us
 }
 
+func errMap[T, U any](t T, err error, f func(T) U) (U, error) {
+	if err != nil {
+		var zero U
+		return zero, err
+	}
+	return f(t), nil
+}
+
 func filter[T any](ts []T, f func(T) bool) []T {
 	us := make([]T, 0)
 	for _, t := range ts {
@@ -65,8 +73,7 @@ func chunk[T any](ts []T, size int) [][]T {
 	return chunks
 }
 
-func parseCtaDetourTime(timeStr string) (time.Time, error) {
-	const layout = "20060102 15:04"
+func parseChicagoTime(timeStr string, layout string) (time.Time, error) {
 	loc, err := time.LoadLocation("America/Chicago")
 	errorTime := time.Unix(0, 0)
 	if err != nil {
@@ -81,6 +88,16 @@ func parseCtaDetourTime(timeStr string) (time.Time, error) {
 		return errorTime, fmt.Errorf("parsing start datetime %q: %w", s, err)
 	}
 	return t, nil
+}
+
+func parseCtaDetourTime(timeStr string) (time.Time, error) {
+	const layout = "20060102 15:04"
+	return parseChicagoTime(timeStr, layout)
+}
+
+func parseCtaTrainTrackerTime(timeStr string) (time.Time, error) {
+	const layout = "2006-01-02T15:04:05"
+	return parseChicagoTime(timeStr, layout)
 }
 
 func unixTimeToTimeUnknownGranularity(unixTime int64) time.Time {

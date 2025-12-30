@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	OS_ENV_BUS_API_KEY = "CTA_BUS_API_KEY"
+	OS_ENV_BUS_API_KEY   = "CTA_BUS_API_KEY"
+	OS_ENV_TRAIN_API_KEY = "CTA_TRAIN_API_KEY"
 )
 
 type Client struct {
@@ -175,4 +176,41 @@ func (bc *BusClient) SpanishLocale() *BusClient {
 func (bc *BusClient) EnglishLocale() *BusClient {
 	bc.c.locale = "en"
 	return bc
+}
+
+const (
+	TRAIN_BASE_URL = "https://lapi.transitchicago.com/api/1.0/"
+)
+
+type TrainClient struct {
+	c *Client
+}
+
+func NewTrainClient(apiKey string) (*TrainClient, error) {
+	c, err := newClient(BUS_BASE_URL, apiKey)
+	if err != nil {
+		return nil, err
+	}
+	return &TrainClient{c: c}, nil
+}
+
+func NewTrainClientFromEnv() (*TrainClient, error) {
+	c, err := newClientFromEnv(BUS_BASE_URL, OS_ENV_BUS_API_KEY)
+	if err != nil {
+		return nil, err
+	}
+	return &TrainClient{c: c}, nil
+}
+
+func (tc *TrainClient) WithLogger(logger *slog.Logger) *TrainClient {
+	tc.c.logger = logger
+	tc.c.redactLogger = true
+	return tc
+}
+
+func (tc *TrainClient) WithUnredactedLogger(logger *slog.Logger) *TrainClient {
+	tc.c.logger = logger
+	tc.c.redactLogger = false
+	logger.Warn("Using an unredacted logger will print your API key to terminal. Be very careful!")
+	return tc
 }
