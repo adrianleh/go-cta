@@ -79,11 +79,15 @@ func (p *PatternPoint) GetStop(c *BusClient, ctx context.Context) (*Stop, error)
 	return &(*stops)[0], nil
 }
 
-func (p *Pattern) GetStops(c *BusClient, ctx context.Context) (*[]Stop, error) {
-	// Careful with this method as it can result in lots of API calls and rate limiting
-	stopPoints := filter(p.Points, func(pt PatternPoint) bool {
+func (p *Pattern) GetStopPoints() []PatternPoint {
+	return filter(p.Points, func(pt PatternPoint) bool {
 		return pt.IsStop()
 	})
+}
+
+func (p *Pattern) GetStops(c *BusClient, ctx context.Context) (*[]Stop, error) {
+	// Careful with this method as it can result in lots of API calls and rate limiting
+	stopPoints := p.GetStopPoints()
 	stopIds := transform(stopPoints, func(pt PatternPoint) string {
 		return pt.StopId
 	})

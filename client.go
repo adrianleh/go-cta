@@ -165,6 +165,11 @@ func (bc *BusClient) WithUnredactedLogger(logger *slog.Logger) *BusClient {
 	return bc
 }
 
+func (bc *BusClient) WithHTTPClient(httpClient *http.Client) *BusClient {
+	bc.c.HTTPClient = httpClient
+	return bc
+}
+
 func (bc *BusClient) SpanishLocale() *BusClient {
 	if bc.c.logger != nil {
 		bc.c.logger.Warn("Spanish locale is very poorly supported by CTA. ¡Lo siento!")

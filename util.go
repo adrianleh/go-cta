@@ -95,6 +95,12 @@ func parseCtaDetourTime(timeStr string) (time.Time, error) {
 	return parseChicagoTime(timeStr, layout)
 }
 
+func parseCtaBusTrackerTime(timeStr string) (time.Time, error) {
+	// Bus tracker timestamps when requested with tmres=s
+	const layout = "20060102 15:04:05"
+	return parseChicagoTime(timeStr, layout)
+}
+
 func parseCtaTrainTrackerTime(timeStr string) (time.Time, error) {
 	const layout = "2006-01-02T15:04:05"
 	return parseChicagoTime(timeStr, layout)

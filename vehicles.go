@@ -90,6 +90,17 @@ func (v *Vehicle) GetPosition() (*DirectedPosition, error) {
 	}, nil
 }
 
+func (v *Vehicle) GetTimestamp() (time.Time, error) {
+	return parseCtaBusTrackerTime(v.Timestamp)
+}
+
+func (v *Vehicle) GetUnixTimestamp() (int64, error) {
+	t, err := v.GetTimestamp()
+	return errMap(t, err, func(t time.Time) int64 {
+		return t.Unix()
+	})
+}
+
 func (v *Vehicle) GetScheduleStartTimeUnix() (int64, error) {
 	if v.ScheduledStartDate == "" || v.ScheduledStartSecondsPastMidnight == 0 {
 		return 0, nil
