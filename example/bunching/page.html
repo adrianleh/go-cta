@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --surface: #fcfcfb; --text: #0b0b0b; --muted: #52514e; --rule: #e4e3df;
+    --gap: #2a78d6; --bunched: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --surface: #1a1a19; --text: #ffffff; --muted: #c3c2b7; --rule: #3a3936; --gap: #3987e5; --bunched: #e66767; }
+  }
+  body { margin: 0 auto; max-width: 720px; padding: 16px; background: var(--surface); color: var(--text);
+         font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  a { color: var(--gap); }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  h2 { font-size: 1.1rem; margin: 0 0 4px; }
+  .muted, .note { color: var(--muted); }
+  .note { font-size: 0.85rem; }
+  .synthetic { background: var(--bunched); color: #fff; padding: 8px 12px; border-radius: 6px; font-weight: 600; }
+  .error { border-left: 4px solid var(--bunched); padding: 4px 10px; }
+  input { width: 100%; box-sizing: border-box; font-size: 1rem; padding: 10px; border: 1px solid var(--rule);
+          border-radius: 6px; background: var(--surface); color: var(--text); }
+  #routes { list-style: none; padding: 0; }
+  #routes li a { display: block; padding: 10px 4px; border-bottom: 1px solid var(--rule); text-decoration: none; color: var(--text); }
+  #routes b { display: inline-block; min-width: 3.5em; }
+  section.direction { border-top: 1px solid var(--rule); padding: 14px 0; }
+  .headline { font-size: 1.05rem; margin: 6px 0; }
+  .wait { display: flex; gap: 24px; align-items: baseline; flex-wrap: wrap; margin: 6px 0; }
+  .wait .big { font-size: 2.2rem; font-weight: 700; line-height: 1.1; }
+  .wait .even { color: var(--muted); }
+  .bunched-count { color: var(--bunched); font-weight: 700; }
+  svg.strip { width: 100%; height: auto; display: block; }
+  .track { stroke: var(--rule); }
+  .gap { stroke: var(--gap); }
+  .gap.bunched { stroke: var(--bunched); }
+  .bus { fill: var(--text); stroke: var(--surface); }
+  .bus.terminal { fill: var(--surface); stroke: var(--muted); }
+  .label { fill: var(--muted); }
+  .label.strong { fill: var(--text); }
+  .legend span { display: inline-block; width: 18px; height: 6px; border-radius: 3px; vertical-align: middle; margin: 0 4px 0 10px; }
+</style>
+</head>
+<body>
+{{if .Synthetic}}<p class="synthetic">Synthetic data: these buses are simulated, not the CTA.</p>{{end}}
+
+{{if .Live}}
+<p><a href="/">← All routes</a></p>
+<p class="note legend">Travel is left to right. <span style="background: var(--gap)"></span>gap <span style="background: var(--bunched)"></span>bunched gap · hollow dots are buses at a terminal</p>
+<div id="live">
+{{range .Live}}
+  <h1>{{.Title}}</h1>
+  <p class="muted">Updated {{.Updated}} · refreshes every 30 s ·
+    <a href="/route/{{.Route}}/snapshot.svg" download="snapshot-{{.Route}}.svg">snapshot SVG</a> ·
+    <a href="/route/{{.Route}}/snapshot.md" download="snapshot-{{.Route}}.md">quick read</a></p>
+  {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+  {{if .Unplaced}}<p class="note">{{.Unplaced}} bus(es) on a pattern we couldn't place are not shown.</p>{{end}}
+  {{range .Directions}}
+  <section class="direction">
+    <h2>{{.Direction}}</h2>
+    {{if eq .InService 0}}
+      <p class="headline">Right now: no buses in service.</p>
+    {{else}}
+      <p class="headline">Right now: {{.InService}} buses in service,
+        <span {{if .BunchedPairs}}class="bunched-count"{{end}}>{{.BunchedPairs}} bunched {{if eq .BunchedPairs 1}}pair{{else}}pairs{{end}}</span>.</p>
+      {{if .HasWait}}
+      <div class="wait">
+        <div><div class="big">≈ {{.WaitNow}} min</div><div>expected wait if you arrive now</div></div>
+        <div class="even"><div class="big">{{.WaitEven}} min</div><div>if the same buses were evenly spaced</div></div>
+      </div>
+      {{else}}<p class="muted">Too few buses to estimate a wait.</p>{{end}}
+    {{end}}
+    {{.Strip}}
+    <p class="note">{{.Gaps}}{{if .Gaps}}. {{end}}{{.SpeedNote}}</p>
+  </section>
+  {{else}}<p>No route patterns found for this route.</p>
+  {{end}}
+{{end}}
+</div>
+<details class="note"><summary>How this is computed</summary>{{.Method}}</details>
+
+{{else}}
+<h1>CTA bus bunching, live</h1>
+<p class="muted">Pick a route to see where its buses are right now, which ones are bunched, and what that does to your wait.</p>
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+<input id="q" type="search" placeholder="Search routes, e.g. 6 or Jackson Park" autocomplete="off" autofocus>
+<ul id="routes">
+{{range .Routes}}<li><a href="/route/{{.RouteId}}"><b>{{.RouteId}}</b> {{.RouteName}}</a></li>
+{{end}}
+</ul>
+{{end}}
+
+<script>
+  // Filter the route list as you type
+  const q = document.getElementById("q");
+  if (q) {
+    q.addEventListener("input", () => {
+      const s = q.value.trim().toLowerCase();
+      for (const li of document.querySelectorAll("#routes li")) {
+        li.hidden = !li.textContent.toLowerCase().includes(s);
+      }
+    });
+  }
+
+  // Swap in fresh data every 30 seconds without reloading the page (the server caches for 30 s too)
+  if (document.getElementById("live")) {
+    setInterval(async () => {
+      try {
+        const res = await fetch(location.href);
+        const fresh = new DOMParser().parseFromString(await res.text(), "text/html").getElementById("live");
+        if (fresh) document.getElementById("live").replaceWith(fresh);
+      } catch (e) {
+        // Offline for a moment - keep showing what we have
+      }
+    }, 30000);
+  }
+</script>
+</body>
+</html>
