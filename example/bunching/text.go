@@ -52,8 +52,8 @@ func headlineLines(d liveDirection) (string, string) {
 	if math.IsNaN(d.ExpectedWait) {
 		return count, "Too few buses to estimate a wait."
 	}
-	return count, fmt.Sprintf("Expected wait for a rider arriving now ≈ %s min vs %s min if evenly spaced.",
-		formatMinutes(d.ExpectedWait), formatMinutes(d.EvenSpacingWait))
+	return count, fmt.Sprintf("Expected wait for a rider arriving now ≈ %s min vs %s min if evenly spaced. Worst case %s min.",
+		formatMinutes(d.ExpectedWait), formatMinutes(d.EvenSpacingWait), formatGap(d.WorstGap))
 }
 
 func headline(d liveDirection) string {
@@ -61,11 +61,24 @@ func headline(d liveDirection) string {
 	return strings.TrimSpace(a + " " + b)
 }
 
+// Only says something when some gaps had to be estimated from distance
 func speedNote(d liveDirection) string {
-	if d.SpeedIsReal {
-		return fmt.Sprintf("Gaps in minutes assume %.0f mph, the average speed the buses report right now.", d.SpeedMph)
+	if d.Estimated == 0 {
+		return "Gaps are from Bus Tracker predictions."
 	}
-	return fmt.Sprintf("Gaps in minutes assume %.0f mph (a typical CTA bus average) because too few buses reported a usable speed.", d.SpeedMph)
+	speed := fmt.Sprintf("%.0f mph, the average speed the buses report right now", d.SpeedMph)
+	if !d.SpeedIsReal {
+		speed = fmt.Sprintf("%.0f mph, a typical CTA bus average", d.SpeedMph)
+	}
+	return fmt.Sprintf("Gaps are from Bus Tracker predictions, except %s marked ~, estimated from distance at %s.",
+		plural(d.Estimated, "gap", "gaps"), speed)
+}
+
+func formatGap(g liveGap) string {
+	if g.Estimated {
+		return "~" + formatMinutes(g.Minutes)
+	}
+	return formatMinutes(g.Minutes)
 }
 
 func gapList(d liveDirection) string {
@@ -74,7 +87,7 @@ func gapList(d liveDirection) string {
 	}
 	parts := make([]string, len(d.Gaps))
 	for i, g := range d.Gaps {
-		parts[i] = formatMinutes(g.Minutes)
+		parts[i] = formatGap(g)
 		if g.Bunched {
 			parts[i] += " (bunched)"
 		}
@@ -101,8 +114,10 @@ func snapshotMarkdown(r *liveRoute, svgFile string) string {
 
 const METHOD_MARKDOWN = `## How this is computed
 
-- Every bus is placed along its direction's longest pattern, by distance along the pattern (the API's ` + "`pdist`" + ` for buses on that pattern, projection of the GPS position for buses on other variants). Buses within 1000 ft of either end are treated as laying over and left out.
-- The gap between consecutive buses is a distance, turned into minutes with one speed per direction: the average speed the buses currently report (10 mph if fewer than 3 buses report a usable speed).
+- Every bus is placed along its direction's longest pattern, by distance along the pattern (the API's ` + "`pdist`" + ` for buses on that pattern, projection of the GPS position for buses on other variants). This only sets the order of the buses. Buses within 1000 ft of either end are treated as laying over and left out.
+- **Gap** between bus A (ahead) and bus B (behind): from Bus Tracker predictions, take the first of A's upcoming stops that B is also predicted at (usually A's next stop). The gap is B's predicted time there minus A's.
+- If they share no predicted stop (a big gap can be longer than the prediction horizon), the gap is **estimated** (marked ~): distance between them divided by the average speed the buses currently report (10 mph if fewer than 3 report a usable speed).
 - **Bunched**: a gap under 2 minutes, or under 25% of the median gap in that direction, whichever is larger.
+- **Worst case**: the longest current gap, which is how long a rider who just missed the bus at the start of that gap waits.
 - **Expected wait for a rider arriving now**: E[H²] / (2·E[H]) over the current gaps H. A rider is more likely to arrive during a long gap, which is why uneven spacing makes the average wait longer. **If evenly spaced**: E[H] / 2, the wait with the same buses spread out evenly. The open-ended gaps ahead of the first bus and behind the last are not included.
 `

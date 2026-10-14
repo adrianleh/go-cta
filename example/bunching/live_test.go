@@ -113,6 +113,130 @@ func TestBuildLiveDirection(t *testing.T) {
 	}
 }
 
+var now = time.Date(2026, time.October, 14, 17, 0, 0, 0, chicago)
+
+func predictionsAt(stops ...any) []stopPrediction {
+	// Arguments alternate stop id and minutes from now: "s1", 1.0, "s2", 3.5, ...
+	var ps []stopPrediction
+	for i := 0; i < len(stops); i += 2 {
+		ps = append(ps, stopPrediction{StopId: stops[i].(string), At: now.Add(time.Duration(stops[i+1].(float64) * float64(time.Minute)))})
+	}
+	return ps
+}
+
+func TestPredictedGap(t *testing.T) {
+	// A is next at stop 2 in 1 minute, B gets there in 4.5 minutes
+	ahead := predictionsAt("2", 1.0, "3", 3.0, "4", 6.0)
+	behind := predictionsAt("1", 0.5, "2", 4.5, "3", 7.0)
+	if gap, ok := predictedGap(ahead, behind); !ok || !almostEqual(gap, 3.5) {
+		t.Errorf("expected 3.5 min at A's next stop, got %f (%v)", gap, ok)
+	}
+	// B's predictions don't reach A's next stop, but do reach a later one
+	ahead = predictionsAt("2", 1.0, "3", 3.0)
+	behind = predictionsAt("0", 1.0, "3", 9.0)
+	if gap, ok := predictedGap(ahead, behind); !ok || !almostEqual(gap, 6) {
+		t.Errorf("expected 6 min at stop 3, got %f (%v)", gap, ok)
+	}
+	// No shared stop: the gap is longer than the prediction horizon
+	if _, ok := predictedGap(predictionsAt("5", 1.0), predictionsAt("1", 2.0)); ok {
+		t.Errorf("expected no gap without a shared stop")
+	}
+	// B predicted at the stop before A: stale prediction, don't trust it
+	if _, ok := predictedGap(predictionsAt("2", 5.0), predictionsAt("2", 4.0)); ok {
+		t.Errorf("expected no gap when the predictions contradict the order")
+	}
+	if _, ok := predictedGap(nil, predictionsAt("2", 4.0)); ok {
+		t.Errorf("expected no gap without predictions")
+	}
+}
+
+func TestBuildLiveDirectionPredictionsAndFallback(t *testing.T) {
+	const minute = 880.0 // at 10 mph
+	buses := []liveBus{
+		{VehicleId: "a", PositionFt: 30 * minute, SpeedMph: 10, Predictions: predictionsAt("s31", 1.0, "s32", 2.0)},
+		// 10 minutes behind a by distance, but predicted 1.5 minutes behind at s31: traffic ahead of a, bunched
+		{VehicleId: "b", PositionFt: 20 * minute, SpeedMph: 10, Predictions: predictionsAt("s25", 1.0, "s31", 2.5)},
+		// Too far behind b to share a predicted stop: estimated from distance, 15 minutes
+		{VehicleId: "c", PositionFt: 5 * minute, SpeedMph: 10, Predictions: predictionsAt("s6", 1.0)},
+	}
+	d := buildLiveDirection(straightRef(40*minute), buses)
+	if len(d.Gaps) != 2 {
+		t.Fatalf("expected 2 gaps, got %d", len(d.Gaps))
+	}
+	first, second := d.Gaps[0], d.Gaps[1]
+	if first.Estimated || !almostEqual(first.Minutes, 1.5) || !first.Bunched || first.Ahead != "a" || first.Behind != "b" {
+		t.Errorf("unexpected first gap %+v", first)
+	}
+	if !second.Estimated || !almostEqual(second.Minutes, 15) || second.Bunched {
+		t.Errorf("unexpected second gap %+v", second)
+	}
+	if d.Estimated != 1 || d.BunchedPairs != 1 {
+		t.Errorf("expected 1 estimated and 1 bunched, got %d and %d", d.Estimated, d.BunchedPairs)
+	}
+	// Same wait formula on the mixed gaps
+	if !almostEqual(d.ExpectedWait, (1.5*1.5+15*15)/(2*16.5)) {
+		t.Errorf("unexpected expected wait %f", d.ExpectedWait)
+	}
+	if d.WorstGap.Behind != "c" || !strings.Contains(headline(d), "Worst case ~15.0 min") {
+		t.Errorf("expected the 15 minute estimated gap as worst case, got %q", headline(d))
+	}
+	if !strings.Contains(gapList(d), "1.5 (bunched), ~15.0") {
+		t.Errorf("expected the estimated gap marked with ~, got %q", gapList(d))
+	}
+	if !strings.Contains(speedNote(d), "except 1 gap marked ~") {
+		t.Errorf("unexpected speed note %q", speedNote(d))
+	}
+}
+
+func TestMapData(t *testing.T) {
+	const minute = 880.0
+	buses := []liveBus{
+		{VehicleId: "a", PositionFt: 30 * minute, Latitude: 41.8, Longitude: -87.6, Predictions: predictionsAt("x", 1.0)},
+		{VehicleId: "b", PositionFt: 29 * minute, Latitude: 41.79, Longitude: -87.6, Predictions: predictionsAt("x", 2.0)},
+		{VehicleId: "t", PositionFt: 0},
+	}
+	r := &liveRoute{Route: "6", Directions: []liveDirection{buildLiveDirection(straightRef(40*minute), buses)}}
+	md := mapData(r)[0]
+	if len(md.Buses) != 3 || len(md.BunchedPairs) != 1 {
+		t.Fatalf("unexpected map data %+v", md)
+	}
+	a, b, term := md.Buses[0], md.Buses[1], md.Buses[2]
+	if a.Bunched || a.GapAhead != "" || a.GapBehind != "1.0" {
+		t.Errorf("unexpected lead bus %+v", a)
+	}
+	if !b.Bunched || b.GapAhead != "1.0" || b.GapBehind != "" {
+		t.Errorf("unexpected second bus %+v", b)
+	}
+	if !term.AtTerminal || term.Bunched || term.GapAhead != "" {
+		t.Errorf("unexpected terminal bus %+v", term)
+	}
+	if md.BunchedPairs[0] != [2][2]float64{{41.8, -87.6}, {41.79, -87.6}} {
+		t.Errorf("unexpected bunched pair %v", md.BunchedPairs[0])
+	}
+}
+
+func TestSynthPredictions(t *testing.T) {
+	// Every synthetic bus in service gets predictions, and the horizon leaves some gaps to the fallback
+	s := newLiveSource(nil)
+	live, err := s.getLive(t.Context(), SYNTH_ROUTE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gaps, estimated := 0, 0
+	for _, d := range live.Directions {
+		gaps += len(d.Gaps)
+		estimated += d.Estimated
+		for _, b := range d.Buses {
+			if !b.AtTerminal && len(b.Predictions) == 0 {
+				t.Errorf("bus %s has no predictions", b.VehicleId)
+			}
+		}
+	}
+	if gaps == 0 || estimated == gaps {
+		t.Errorf("expected mostly predicted gaps, got %d of %d estimated", estimated, gaps)
+	}
+}
+
 func TestBuildLiveDirectionFewBuses(t *testing.T) {
 	d := buildLiveDirection(straightRef(50000), []liveBus{{VehicleId: "a", PositionFt: 20000}, {VehicleId: "b", PositionFt: 10000}})
 	if len(d.Gaps) != 1 || !math.IsNaN(d.ExpectedWait) {
@@ -197,6 +321,9 @@ func TestServer(t *testing.T) {
 		"/route/6":              "expected wait if you arrive now",
 		"/route/6/snapshot.svg": "SYNTHETIC DATA",
 		"/route/6/snapshot.md":  "E[H²] / (2·E[H])",
+		"/route/6/map":          `id="map"`,
+		"/route/6/map.json":     `"bunchedPairs"`,
+		"/map.js":               "L.map",
 	}
 	for path, want := range cases {
 		resp, err := http.Get(srv.URL + path)

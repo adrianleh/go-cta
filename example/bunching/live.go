@@ -4,14 +4,19 @@ import (
 	"cmp"
 	"math"
 	"slices"
+	"time"
+
+	"adrianlehmann.net/cta"
 )
 
 // Live view of one route: where every bus is right now along each direction's pattern,
 // the gaps between them, and which gaps count as bunched.
 //
-// Gaps are measured in feet along the pattern and turned into minutes with one speed per direction
-// (see directionSpeed). Using one speed for the whole direction keeps gaps comparable to each other -
-// a bus sitting at a light doesn't suddenly make the gap behind it look huge.
+// Gaps come from Bus Tracker predictions: for buses A (ahead) and B (behind), take a stop both are predicted at
+// and the gap is when B gets there minus when A gets there (see predictedGap). That accounts for traffic and
+// slow stretches, which a distance can't. If the two buses have no stop in common within the prediction horizon
+// (big gaps can be longer than that), we fall back to distance divided by one speed for the direction
+// (see directionSpeed) and mark the gap as estimated.
 
 const (
 	DEFAULT_SPEED_MPH = 10 // rough CTA local bus average including stops, used when reported speeds are no good
@@ -29,19 +34,30 @@ const (
 	BUNCH_FRACTION = 0.25
 )
 
+type stopPrediction struct {
+	StopId string
+	At     time.Time
+}
+
 type liveBus struct {
 	VehicleId   string
 	Destination string
 	PositionFt  float64 // along the direction's reference pattern
-	SpeedMph    int     // as reported by the bus
+	Latitude    float64
+	Longitude   float64
+	SpeedMph    int              // as reported by the bus
+	Predictions []stopPrediction // upcoming stops, soonest first
 	AtTerminal  bool
 }
 
 type liveGap struct {
-	FromFt  float64 // bus behind
-	ToFt    float64 // bus ahead
-	Minutes float64
-	Bunched bool
+	Ahead     string // vehicle ids
+	Behind    string
+	FromFt    float64 // bus behind
+	ToFt      float64 // bus ahead
+	Minutes   float64
+	Estimated bool // from distance and speed because there was no shared predicted stop
+	Bunched   bool
 }
 
 type liveDirection struct {
@@ -49,10 +65,12 @@ type liveDirection struct {
 	LengthFt    float64
 	StartName   string
 	EndName     string
-	Buses       []liveBus // in service first, furthest along first, then buses laying over at a terminal
-	Gaps        []liveGap // front to back
-	SpeedMph    float64
-	SpeedIsReal bool // false when we fell back to DEFAULT_SPEED_MPH
+	Path        []cta.Position // the reference pattern, for the map
+	Buses       []liveBus      // in service first, furthest along first, then buses laying over at a terminal
+	Gaps        []liveGap      // front to back
+	SpeedMph    float64        // only used for estimated gaps
+	SpeedIsReal bool           // false when we fell back to DEFAULT_SPEED_MPH
+	Estimated   int            // number of estimated gaps
 
 	InService       int
 	BunchedPairs    int
@@ -60,6 +78,7 @@ type liveDirection struct {
 	MedianGap       float64 // minutes
 	ExpectedWait    float64 // minutes, NaN with fewer than 2 gaps
 	EvenSpacingWait float64 // minutes, NaN with fewer than 2 gaps
+	WorstGap        liveGap // the longest gap: the worst wait for a rider who just missed a bus, zero without gaps
 }
 
 func bunchThreshold(medianGap float64) float64 {
@@ -79,6 +98,7 @@ func buildLiveDirection(ref *refPattern, buses []liveBus) liveDirection {
 		LengthFt:  ref.lengthFt,
 		StartName: ref.startName(),
 		EndName:   ref.endName(),
+		Path:      ref.points,
 	}
 
 	var inService, terminal []liveBus
@@ -104,8 +124,15 @@ func buildLiveDirection(ref *refPattern, buses []liveBus) liveDirection {
 	minutes := make([]float64, 0, len(inService))
 	for i := 1; i < len(inService); i++ {
 		ahead, behind := inService[i-1], inService[i]
-		m := feetToMinutes(ahead.PositionFt-behind.PositionFt, d.SpeedMph)
-		d.Gaps = append(d.Gaps, liveGap{FromFt: behind.PositionFt, ToFt: ahead.PositionFt, Minutes: m})
+		g := liveGap{Ahead: ahead.VehicleId, Behind: behind.VehicleId, FromFt: behind.PositionFt, ToFt: ahead.PositionFt}
+		m, ok := predictedGap(ahead.Predictions, behind.Predictions)
+		if !ok {
+			m = feetToMinutes(ahead.PositionFt-behind.PositionFt, d.SpeedMph)
+			g.Estimated = true
+			d.Estimated++
+		}
+		g.Minutes = m
+		d.Gaps = append(d.Gaps, g)
 		minutes = append(minutes, m)
 	}
 
@@ -119,6 +146,12 @@ func buildLiveDirection(ref *refPattern, buses []liveBus) liveDirection {
 	}
 
 	// The gap ahead of the lead bus and behind the last one aren't known, so they're not part of the wait
+	for _, g := range d.Gaps {
+		if g.Minutes > d.WorstGap.Minutes {
+			d.WorstGap = g
+		}
+	}
+
 	d.ExpectedWait = math.NaN()
 	d.EvenSpacingWait = math.NaN()
 	if len(minutes) >= 2 {
@@ -126,6 +159,22 @@ func buildLiveDirection(ref *refPattern, buses []liveBus) liveDirection {
 		d.EvenSpacingWait = mean(minutes) / 2
 	}
 	return d
+}
+
+// Minutes between bus A (ahead) and bus B (behind) at the first of A's upcoming stops that B also has a
+// prediction for - usually A's next stop. False if they share no stop, or if the predictions disagree with
+// the order on the strip (B getting there first), which happens when one prediction is stale.
+func predictedGap(ahead []stopPrediction, behind []stopPrediction) (float64, bool) {
+	for _, a := range ahead {
+		for _, b := range behind {
+			if a.StopId != b.StopId {
+				continue
+			}
+			gap := b.At.Sub(a.At).Minutes()
+			return gap, gap >= 0
+		}
+	}
+	return 0, false
 }
 
 // One speed per direction: the average of the speeds the buses report right now. Averaged over many buses -

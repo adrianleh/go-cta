@@ -1,11 +1,11 @@
 # Bus bunching, live
 
-A small website built on go-cta. Pick any CTA bus route and see each direction as a strip with every bus on it,
-the gaps between them, bunched pairs highlighted, and what that spacing does to your wait:
+A small website built on go-cta. Pick any CTA bus route and see each direction as a strip (or on a map) with every bus
+on it, the gaps between them, bunched pairs highlighted, and what that spacing does to your wait:
 
-> Right now: N buses, X bunched pairs. Expected wait for a rider arriving now ≈ Y min vs Z min if evenly spaced.
+> Right now: N buses, X bunched pairs. Expected wait for a rider arriving now ≈ Y min vs Z min if evenly spaced. Worst case W min.
 
-One Go server (standard library only), one HTML file, no build step. Works on a phone.
+One Go server (standard library only), one HTML file plus a small `map.js`, no build step. Works on a phone.
 
 ## Running it
 
@@ -20,10 +20,13 @@ go run ./example/bunching -synthetic      # simulated buses, no key needed
 
 - `/` lists all routes (searchable)
 - `/route/6` is the live view for #6, refreshed every 30 seconds. `/route/6,J14` shows several routes on one page (up to 4).
+- `/route/6/map` is the same route on a map (Leaflet and OpenStreetMap tiles, loaded from a CDN). Tap a bus for its gaps.
 - `/route/6/snapshot.svg` and `/route/6/snapshot.md` download the current view as a picture and a short quick read.
 
-Bus Tracker is only called for routes someone is viewing. Vehicle positions are cached for 30 seconds, route patterns
-for 6 hours and the route list for a day, so many viewers cost the same as one and the daily request limit is safe.
+Bus Tracker is only called for routes someone is viewing. Vehicle positions and predictions are cached for 30 seconds,
+route patterns for 6 hours and the route list for a day, so many viewers cost the same as one. A route that's open
+somewhere costs 1 vehicle request plus 1 prediction request per 10 buses every 30 seconds - about 11,500 requests a day
+for a route with 30 buses, so keep an eye on the daily limit if several routes stay open all day.
 
 ## Snapshots
 
@@ -42,21 +45,26 @@ Example (**synthetic** - simulated buses from `-synthetic`, not CTA data):
 
 ## How it's computed
 
-- **Position.** Every bus is placed along its direction's longest pattern by distance along the pattern: the API's `pdist`
+- **Order.** Every bus is placed along its direction's longest pattern by distance along the pattern: the API's `pdist`
   for buses on that pattern, projection of the GPS position onto it for buses on other variants (short turns etc.).
   Buses within 1000 ft of either end are treated as laying over (hollow dots) and left out of the numbers.
-- **Gap in minutes.** The distance between consecutive buses divided by one speed per direction: the average of the
-  speeds the buses report right now. Averaged over many buses - some stopped, some moving - that's roughly the running
-  speed including stops. With fewer than 3 buses, or if they all report 0, it uses 10 mph. One speed for the whole direction
-  keeps the gaps comparable: a bus waiting at a light doesn't make the gap behind it jump.
+- **Gap in minutes.** From Bus Tracker predictions. For a bus A and the bus B behind it, take the first of A's upcoming
+  stops that B also has a prediction for (usually A's next stop). The gap is B's predicted time there minus A's.
+  That accounts for traffic and slow stretches, which distance alone can't.
+- **Estimated gaps.** If A and B share no predicted stop (a big gap can be longer than the prediction horizon), or the
+  predictions contradict the order on the strip, the gap falls back to distance divided by one speed for the direction:
+  the average of the speeds the buses report right now (10 mph if fewer than 3 report a usable speed).
+  Estimated gaps are drawn dashed and marked ~.
 - **Bunched.** A gap under 2 minutes, or under 25% of the median gap in that direction, whichever is larger.
   The relative part matters on infrequent routes.
 - **Expected wait for a rider arriving now.** E[H²] / (2·E[H]) over the current gaps H. A rider is more likely to show
   up during a long gap than a short one, so uneven spacing makes the average wait longer even with the same number of buses.
   **If evenly spaced** is E[H] / 2. The open-ended gaps ahead of the first bus and behind the last are not included.
+- **Worst case.** The longest current gap: how long you wait if you just missed the bus at the start of it.
 
-Limitations: speeds are a rough estimate, gaps are "time for the bus behind to get where the bus ahead is now",
-not true headways at a stop, and buses on a detour pattern far from the main pattern get projected onto it anyway.
+Limitations: predictions are only as good as Bus Tracker's, estimated gaps use a rough speed, gaps are
+"time for the bus behind to get where the bus ahead is going next", not measured headways at a stop, and buses on a
+detour pattern far from the main pattern get projected onto it anyway.
 
 ## Logging and analyzing over time
 

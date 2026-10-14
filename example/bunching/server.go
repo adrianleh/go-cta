@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"encoding/json"
 	"html/template"
 	"log/slog"
 	"math"
@@ -16,11 +17,15 @@ var pageHTML string
 
 var page = template.Must(template.New("page").Parse(pageHTML))
 
+//go:embed map.js
+var mapJS string
+
 type pageData struct {
 	Title     string
 	Synthetic bool
 	Routes    []cta.Route // home page
 	Live      []routeView // route page
+	Map       bool        // show the map instead of the strips
 	Error     string
 	Method    template.HTML
 }
@@ -41,6 +46,7 @@ type directionView struct {
 	HasWait      bool
 	WaitNow      string
 	WaitEven     string
+	WaitWorst    string
 	Strip        template.HTML
 	Gaps         string
 	SpeedNote    string
@@ -52,7 +58,8 @@ func newServer(source *liveSource) *http.ServeMux {
 		routes, err := source.getRoutes(r.Context())
 		data := pageData{Title: "CTA bus bunching", Routes: routes, Synthetic: source.client == nil}
 		if err != nil {
-			data.Error = "Couldn't load the route list from Bus Tracker: " + err.Error()
+			slog.Error("Getting routes", slog.Any("err", err))
+			data.Error = "Couldn't load the route list from Bus Tracker. Try again in a minute."
 		}
 		render(w, data)
 	})
@@ -66,19 +73,45 @@ func newServer(source *liveSource) *http.ServeMux {
 		data.Title = "Bunching on #" + strings.Join(routes, ", #")
 		render(w, data)
 	})
-	mux.HandleFunc("GET /route/{route}/snapshot.svg", func(w http.ResponseWriter, r *http.Request) {
-		live, err := source.getLive(r.Context(), r.PathValue("route"))
+	mux.HandleFunc("GET /route/{route}/map", func(w http.ResponseWriter, r *http.Request) {
+		rt := r.PathValue("route")
+		live, err := source.getLive(r.Context(), rt)
+		render(w, pageData{
+			Title:     "Bunching on #" + rt + ", map",
+			Synthetic: source.client == nil,
+			Method:    METHOD_HTML,
+			Map:       true,
+			Live:      []routeView{newRouteView(rt, live, err)},
+		})
+	})
+	mux.HandleFunc("GET /route/{route}/map.json", func(w http.ResponseWriter, r *http.Request) {
+		live, _ := source.getLive(r.Context(), r.PathValue("route"))
 		if live == nil {
-			http.Error(w, "no data: "+errString(err), http.StatusBadGateway)
+			http.Error(w, "Couldn't reach Bus Tracker", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(mapData(live)); err != nil {
+			slog.Error("Encoding map data", slog.Any("err", err))
+		}
+	})
+	mux.HandleFunc("GET /map.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		_, _ = w.Write([]byte(mapJS))
+	})
+	mux.HandleFunc("GET /route/{route}/snapshot.svg", func(w http.ResponseWriter, r *http.Request) {
+		live, _ := source.getLive(r.Context(), r.PathValue("route"))
+		if live == nil {
+			http.Error(w, "Couldn't reach Bus Tracker", http.StatusBadGateway)
 			return
 		}
 		w.Header().Set("Content-Type", "image/svg+xml")
 		_, _ = w.Write([]byte(snapshotSVG(live)))
 	})
 	mux.HandleFunc("GET /route/{route}/snapshot.md", func(w http.ResponseWriter, r *http.Request) {
-		live, err := source.getLive(r.Context(), r.PathValue("route"))
+		live, _ := source.getLive(r.Context(), r.PathValue("route"))
 		if live == nil {
-			http.Error(w, "no data: "+errString(err), http.StatusBadGateway)
+			http.Error(w, "Couldn't reach Bus Tracker", http.StatusBadGateway)
 			return
 		}
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
@@ -94,17 +127,14 @@ func render(w http.ResponseWriter, data pageData) {
 	}
 }
 
-func errString(err error) string {
-	if err == nil {
-		return "unknown error"
-	}
-	return err.Error()
-}
-
 func newRouteView(rt string, live *liveRoute, err error) routeView {
 	v := routeView{Route: rt, Title: "#" + rt}
 	if err != nil {
-		v.Error = "Couldn't reach Bus Tracker: " + err.Error()
+		// Details go to the server log only - visitors don't need them
+		v.Error = "Couldn't reach Bus Tracker just now."
+		if live != nil {
+			v.Error += " Showing the last data we got."
+		}
 	}
 	if live == nil {
 		return v
@@ -120,6 +150,7 @@ func newRouteView(rt string, live *liveRoute, err error) routeView {
 			HasWait:      !math.IsNaN(d.ExpectedWait),
 			WaitNow:      formatMinutes(d.ExpectedWait),
 			WaitEven:     formatMinutes(d.EvenSpacingWait),
+			WaitWorst:    formatGap(d.WorstGap),
 			Strip:        template.HTML(stripSVG(d)), // built from escaped strings in svg.go
 			Gaps:         gapList(d),
 			SpeedNote:    speedNote(d),
@@ -128,9 +159,13 @@ func newRouteView(rt string, live *liveRoute, err error) routeView {
 	return v
 }
 
-const METHOD_HTML = template.HTML(`<p>Each bus is placed along its direction's route pattern by distance along the pattern.
-Buses within 1000 ft of either end are treated as laying over (hollow dots) and left out.
-The gap between consecutive buses is turned into minutes using the average speed the buses report right now (10 mph if too few report one).</p>
+const METHOD_HTML = template.HTML(`<p>Buses are ordered by distance along their direction's route pattern.
+Buses within 1000 ft of either end are treated as laying over (hollow dots) and left out.</p>
+<p><strong>Gap</strong> between a bus and the one behind it: from Bus Tracker predictions, the time the bus behind is predicted at
+the first upcoming stop both have a prediction for, minus the time the bus ahead is predicted there.
+If they share no predicted stop (big gaps can be longer than the prediction horizon), the gap is <strong>estimated</strong>
+from the distance and the average speed the buses report (shown dashed and marked ~).</p>
 <p><strong>Bunched</strong>: a gap under 2 minutes, or under 25% of the median gap, whichever is larger.</p>
+<p><strong>Worst case</strong>: the longest gap right now - how long you wait if you just missed the bus at the start of it.</p>
 <p><strong>Expected wait if you arrive now</strong>: E[H²] / (2·E[H]) over the current gaps H. You're more likely to show up during a long gap,
 so uneven spacing makes the average wait longer. <strong>If evenly spaced</strong>: E[H] / 2, the same buses spread out evenly.</p>`)

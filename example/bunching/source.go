@@ -19,6 +19,8 @@ const (
 	PATTERNS_CACHE_FOR = 6 * time.Hour
 	ROUTES_CACHE_FOR   = 24 * time.Hour
 	REQUEST_TIMEOUT    = 20 * time.Second
+
+	MAX_VEHICLES_PER_REQUEST = 10 // API limit for predictions by vehicle
 )
 
 type liveRoute struct {
@@ -136,9 +138,49 @@ func (s *liveSource) fetchLive(ctx context.Context, rt string) (*liveRoute, erro
 	if err != nil {
 		return nil, err
 	}
-	live := buildLiveRoute(rt, patterns, vehicles)
+	// Without predictions every gap falls back to the distance estimate, so a failure here isn't fatal
+	predictions, err := s.fetchPredictions(ctx, vehicles)
+	if err != nil {
+		slog.Error("Fetching predictions", slog.String("route", rt), slog.Any("err", err))
+	}
+	live := buildLiveRoute(rt, patterns, vehicles, predictions)
 	live.Synthetic = s.client == nil
 	return live, nil
+}
+
+// Upcoming stop predictions per vehicle, soonest first. One request per 10 buses (API limit).
+func (s *liveSource) fetchPredictions(ctx context.Context, vehicles []cta.Vehicle) (map[string][]stopPrediction, error) {
+	vids := make([]string, len(vehicles))
+	for i, v := range vehicles {
+		vids[i] = v.Id
+	}
+
+	var predictions []cta.Prediction
+	if s.client == nil {
+		predictions = synthPredictions(time.Now())
+	}
+	for start := 0; s.client != nil && start < len(vids); start += MAX_VEHICLES_PER_REQUEST {
+		batch := vids[start:min(start+MAX_VEHICLES_PER_REQUEST, len(vids))]
+		// Per-vehicle errors (e.g. "No arrival times" for a bus laying over) just mean that bus has no predictions
+		ps, _, err := s.client.GetPredictionsByVehicleIdsAllowingErrors(ctx, batch)
+		if err != nil {
+			return nil, err
+		}
+		predictions = append(predictions, *ps...)
+	}
+
+	byVehicle := make(map[string][]stopPrediction)
+	for _, p := range predictions {
+		at, err := p.GetPredictedTime()
+		if err != nil {
+			continue
+		}
+		byVehicle[p.VehicleId] = append(byVehicle[p.VehicleId], stopPrediction{StopId: p.StopId, At: at})
+	}
+	for _, ps := range byVehicle {
+		slices.SortFunc(ps, func(a, b stopPrediction) int { return a.At.Compare(b.At) })
+	}
+	return byVehicle, nil
 }
 
 func (s *liveSource) fetchVehicles(ctx context.Context, rt string) ([]cta.Vehicle, error) {
@@ -192,7 +234,7 @@ func (s *liveSource) getPatterns(ctx context.Context, rt string, vehicles []cta.
 	return rp, nil
 }
 
-func buildLiveRoute(rt string, patterns *routePatterns, vehicles []cta.Vehicle) *liveRoute {
+func buildLiveRoute(rt string, patterns *routePatterns, vehicles []cta.Vehicle, predictions map[string][]stopPrediction) *liveRoute {
 	live := &liveRoute{Route: rt, FetchedAt: time.Now()}
 	busesByDirection := make(map[string][]liveBus)
 	for _, v := range vehicles {
@@ -206,12 +248,17 @@ func buildLiveRoute(rt string, patterns *routePatterns, vehicles []cta.Vehicle) 
 			live.Unplaced++
 			continue
 		}
-		busesByDirection[ref.direction] = append(busesByDirection[ref.direction], liveBus{
+		bus := liveBus{
 			VehicleId:   v.Id,
 			Destination: v.Destination,
 			PositionFt:  at,
 			SpeedMph:    v.Speed,
-		})
+			Predictions: predictions[v.Id],
+		}
+		if pos, err := v.GetPosition(); err == nil {
+			bus.Latitude, bus.Longitude = pos.Position.Latitude, pos.Position.Longitude
+		}
+		busesByDirection[ref.direction] = append(busesByDirection[ref.direction], bus)
 	}
 
 	directions := make([]string, 0, len(patterns.refs))
