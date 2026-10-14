@@ -1,1 +1,6 @@
 .env
+# Bunching example output and raw data
+*.jsonl
+/bunching-*
+/synthetic-*
+/snapshot-*
