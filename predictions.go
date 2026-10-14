@@ -205,21 +205,43 @@ func (e BusTrackerPredictionsError) String() string {
 	return e.Msg
 }
 
-func (c *BusClient) getPredictions(ctx context.Context, query map[string]string) (*[]Prediction, error) {
+func (c *BusClient) getPredictionsAllowingErrors(ctx context.Context, query map[string]string) (*[]Prediction, []BusTrackerPredictionsError, error) {
 	query["tmres"] = "s"
 	query["unixtime"] = "True" // <- Sane time format without timezone issue. Convert in front-end if needed.
 	preditionResponses, err := processRequest[busTrackerPredictionsResponse](c.c, ctx, "getpredictions", query)
 	if err != nil {
-		return nil, fmt.Errorf("getting patterns: %w", err)
+		return nil, nil, fmt.Errorf("getting predictions: %w", err)
 	}
-	errs := preditionResponses.BustimeResponse.Error
+	return &preditionResponses.BustimeResponse.Prediction, preditionResponses.BustimeResponse.Error, nil
+}
+
+func (c *BusClient) getPredictions(ctx context.Context, query map[string]string) (*[]Prediction, error) {
+	predictions, errs, err := c.getPredictionsAllowingErrors(ctx, query)
+	if err != nil {
+		return nil, err
+	}
 	if len(errs) > 0 {
 		lambda := func(e BusTrackerPredictionsError) string {
 			return e.String()
 		}
 		return nil, errors.New(strings.Join(transform(errs, lambda), "; "))
 	}
-	return &preditionResponses.BustimeResponse.Prediction, nil
+	return predictions, nil
+}
+
+// Like GetPredictionsByVehicleIds, but one vehicle without predictions (e.g. laying over) doesn't fail the whole batch.
+// You get the predictions that exist plus the per-vehicle errors.
+func (c *BusClient) GetPredictionsByVehicleIdsAllowingErrors(ctx context.Context, vehicleIds []string) (*[]Prediction, []BusTrackerPredictionsError, error) {
+	if len(vehicleIds) == 0 {
+		return nil, nil, errors.New("no vehicle IDs provided")
+	}
+	if len(vehicleIds) > 10 {
+		return nil, nil, errors.New("maximum of 10 vehicle IDs allowed")
+	}
+	query := map[string]string{
+		"vid": strings.Join(vehicleIds, ","),
+	}
+	return c.getPredictionsAllowingErrors(ctx, query)
 }
 
 func (c *BusClient) GetPredictionsByVehicleIdsWithLimit(ctx context.Context, vehicleIds []string, limit int) (*[]Prediction, error) {
