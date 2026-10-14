@@ -104,7 +104,13 @@ func processRequest[T any](c *Client, ctx context.Context, endpoint string, quer
 	}
 	resp, err := c.HTTPClient.Do(getReq)
 	if err != nil {
-		return zero, err
+		// Transport errors include the request URL, and with it the API key
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			urlErr.URL = redactApiKey(urlErr.URL)
+			return zero, urlErr
+		}
+		return zero, errors.New(redactApiKey(err.Error()))
 	}
 	defer resp.Body.Close()
 
