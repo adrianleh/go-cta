@@ -5,6 +5,7 @@ package main
 type mapBus struct {
 	VehicleId  string     `json:"vid"`
 	Position   [2]float64 `json:"pos"` // lat, lon
+	Heading    float64    `json:"hdg"` // degrees clockwise from north
 	AtTerminal bool       `json:"terminal"`
 	Bunched    bool       `json:"bunched"` // with the bus ahead
 	GapAhead   string     `json:"gapAhead,omitempty"`
@@ -27,7 +28,7 @@ func mapData(r *liveRoute) []mapDirection {
 		}
 		// Buses are in service first, front to back, so Gaps[i-1] is the gap ahead of bus i and Gaps[i] the one behind
 		for i, b := range d.Buses {
-			mb := mapBus{VehicleId: b.VehicleId, Position: [2]float64{b.Latitude, b.Longitude}, AtTerminal: b.AtTerminal}
+			mb := mapBus{VehicleId: b.VehicleId, Position: [2]float64{b.Latitude, b.Longitude}, Heading: b.Heading, AtTerminal: b.AtTerminal}
 			if !b.AtTerminal && i > 0 {
 				ahead := d.Gaps[i-1]
 				mb.GapAhead = formatGap(ahead)

@@ -45,6 +45,7 @@ type liveBus struct {
 	PositionFt  float64 // along the direction's reference pattern
 	Latitude    float64
 	Longitude   float64
+	Heading     float64          // degrees clockwise from north, as reported by the bus
 	SpeedMph    int              // as reported by the bus
 	Predictions []stopPrediction // upcoming stops, soonest first
 	AtTerminal  bool

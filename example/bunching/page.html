@@ -52,6 +52,7 @@
   .views a { margin-right: 12px; }
   .views a.current { color: var(--text); font-weight: 700; text-decoration: none; }
   #map { height: 70vh; min-height: 320px; border-radius: 8px; margin: 8px 0; }
+  .bus-arrow { background: none; border: none; }
   .legend span { display: inline-block; width: 18px; height: 6px; border-radius: 3px; vertical-align: middle; margin: 0 4px 0 10px; }
 </style>
 </head>
@@ -61,7 +62,7 @@
 {{if .Live}}
 <p><a href="/">← All routes</a></p>
 {{if .Map}}
-<p class="note legend"><span style="background: var(--gap)"></span>bus <span style="background: var(--bunched)"></span>bunched with the bus ahead · hollow dots are buses at a terminal · tap a bus for its gaps</p>
+<p class="note legend"><span style="background: var(--gap)"></span>bus <span style="background: var(--bunched)"></span>bunched with the bus ahead · arrows point the way each bus is heading · faded arrows are buses at a terminal · tap a bus for its gaps</p>
 {{else}}
 <p class="note legend">Travel is left to right. <span style="background: var(--gap)"></span>gap <span style="background: var(--bunched)"></span>bunched gap · dashed gaps are estimated · hollow dots are buses at a terminal</p>
 {{end}}

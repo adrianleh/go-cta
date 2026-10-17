@@ -1,4 +1,4 @@
-// The map view: each direction's pattern, buses at their GPS positions, bunched pairs joined by a red line.
+// The map view: each direction's pattern, buses at their GPS positions pointing the way they're heading, bunched pairs joined by a red line.
 // Redraws from /route/<route>/map.json every 30 seconds.
 const mapEl = document.getElementById("map");
 const style = getComputedStyle(document.documentElement);
@@ -23,8 +23,17 @@ function popupText(direction, bus) {
   if (bus.terminal) lines.push("At a terminal");
   if (bus.gapAhead) lines.push(`${bus.gapAhead} min behind the bus ahead${bus.bunched ? " (bunched)" : ""}`);
   if (bus.gapBehind) lines.push(`${bus.gapBehind} min ahead of the bus behind`);
-  if ((bus.gapAhead + bus.gapBehind).includes("~")) lines.push("~ estimated from distance");
+  if (`${bus.gapAhead ?? ""}${bus.gapBehind ?? ""}`.includes("~")) lines.push("~ estimated from distance");
   return lines.join("<br>");
+}
+
+// An arrow pointing the way the bus is heading, so the two directions on the same street tell apart
+function arrowIcon(color, heading, terminal) {
+  const svg =
+    `<svg width="26" height="26" viewBox="0 0 26 26" style="transform: rotate(${heading}deg)">` +
+    `<path d="M13 2 L22 23 L13 18 L4 23 Z" fill="${color}" fill-opacity="${terminal ? 0.3 : 1}" ` +
+    `stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg>`;
+  return L.divIcon({ html: svg, className: "bus-arrow", iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -12] });
 }
 
 function draw(directions) {
@@ -42,13 +51,9 @@ function draw(directions) {
     }
     for (const bus of d.buses) {
       const color = bus.bunched ? colors.bunched : bus.terminal ? colors.muted : colors.bus;
-      const marker = L.circleMarker(bus.pos, {
-        radius: 8,
-        color: "#fff",
-        weight: 2,
-        fillColor: color,
-        fillOpacity: bus.terminal ? 0.3 : 1,
-      }).bindPopup(popupText(d.direction, bus)).addTo(layer);
+      const marker = L.marker(bus.pos, { icon: arrowIcon(color, bus.hdg, bus.terminal) })
+        .bindPopup(popupText(d.direction, bus))
+        .addTo(layer);
       marker.on("click", () => (openVid = bus.vid));
       if (bus.vid === openVid) marker.openPopup();
     }

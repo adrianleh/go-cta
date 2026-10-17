@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"strconv"
 	"time"
@@ -108,6 +109,13 @@ func (t synthTrip) at(f float64) time.Time {
 	return t.dispatch.Add(time.Duration(f * float64(t.runtime)))
 }
 
+// The compass bearing from a to b, close enough over a few miles
+func synthHeading(a, b cta.PatternPoint) int {
+	dy := b.Latitude - a.Latitude
+	dx := (b.Longitude - a.Longitude) * math.Cos(a.Latitude*math.Pi/180)
+	return (int(math.Round(math.Atan2(dx, dy)*180/math.Pi)) + 360) % 360
+}
+
 func synthVehicles(now time.Time) []cta.Vehicle {
 	var vehicles []cta.Vehicle
 	for _, t := range synthTrips(now) {
@@ -118,7 +126,7 @@ func synthVehicles(now time.Time) []cta.Vehicle {
 			Timestamp:         now.In(chicago).Format("20060102 15:04:05"),
 			Latitude:          strconv.FormatFloat(first.Latitude+f*(last.Latitude-first.Latitude), 'f', 6, 64),
 			Longitude:         strconv.FormatFloat(first.Longitude+f*(last.Longitude-first.Longitude), 'f', 6, 64),
-			Heading:           "0",
+			Heading:           strconv.Itoa(synthHeading(first, last)),
 			PatternId:         t.pattern.Pid,
 			PatternDistanceFt: int(f * t.pattern.LengthFeet),
 			Route:             SYNTH_ROUTE,

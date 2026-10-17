@@ -257,7 +257,7 @@ func buildLiveRoute(rt string, patterns *routePatterns, vehicles []cta.Vehicle, 
 			Predictions: predictions[v.Id],
 		}
 		if pos, err := v.GetPosition(); err == nil {
-			bus.Latitude, bus.Longitude = pos.Position.Latitude, pos.Position.Longitude
+			bus.Latitude, bus.Longitude, bus.Heading = pos.Position.Latitude, pos.Position.Longitude, pos.Heading
 		}
 		busesByDirection[ref.direction] = append(busesByDirection[ref.direction], bus)
 	}
