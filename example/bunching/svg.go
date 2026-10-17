@@ -15,18 +15,6 @@ const (
 	STRIP_LINE_Y = 46
 )
 
-// Colors for the standalone snapshot. On the page the same classes are styled by page.html (with dark mode).
-const SNAPSHOT_STYLE = `<style>
-.surface { fill: #fcfcfb; }
-.track { stroke: #e4e3df; }
-.gap { stroke: #2a78d6; }
-.gap.bunched { stroke: #d03b3b; }
-.bus { fill: #0b0b0b; stroke: #fcfcfb; }
-.bus.terminal { fill: #fcfcfb; stroke: #52514e; }
-.label { fill: #52514e; }
-.label.strong, .title { fill: #0b0b0b; }
-</style>`
-
 func stripX(ft float64, lengthFt float64) float64 {
 	if lengthFt <= 0 {
 		return STRIP_PAD
@@ -44,7 +32,7 @@ func truncate(s string, n int) string {
 
 func stripSVG(d liveDirection) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, `<svg class="strip" viewBox="0 0 %d %d" role="img" aria-label="%s">`, STRIP_WIDTH, STRIP_HEIGHT, html.EscapeString(headline(d)))
+	fmt.Fprintf(&sb, `<svg class="strip" viewBox="0 0 %d %d" role="img" aria-label="%s">`, STRIP_WIDTH, STRIP_HEIGHT, html.EscapeString(fmt.Sprintf("%s, %d buses in service", d.Direction, d.InService)))
 	fmt.Fprintf(&sb, `<line class="track" x1="%d" x2="%d" y1="%d" y2="%d" stroke-width="6" stroke-linecap="round"/>`,
 		STRIP_PAD, STRIP_WIDTH-STRIP_PAD, STRIP_LINE_Y, STRIP_LINE_Y)
 
@@ -88,32 +76,5 @@ func stripSVG(d liveDirection) string {
 	fmt.Fprintf(&sb, `<text class="label" x="%d" y="%d" font-size="11" text-anchor="end">%s</text>`, STRIP_WIDTH-STRIP_PAD+4, STRIP_LINE_Y+26, html.EscapeString(truncate(d.EndName, 26)))
 	fmt.Fprintf(&sb, `<text class="label" x="%d" y="%d" font-size="11" text-anchor="middle">→</text>`, STRIP_WIDTH/2, STRIP_LINE_Y+26)
 	sb.WriteString(`</svg>`)
-	return sb.String()
-}
-
-// A standalone picture of the whole route at one moment, for sharing
-func snapshotSVG(r *liveRoute) string {
-	const width = 2 * STRIP_WIDTH
-	const blockHeight = 2*STRIP_HEIGHT + 64
-	height := 84 + len(r.Directions)*blockHeight
-
-	var sb strings.Builder
-	fmt.Fprintf(&sb, `<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d" font-family="-apple-system, Helvetica, Arial, sans-serif">`, width, height, width, height)
-	sb.WriteString(SNAPSHOT_STYLE)
-	fmt.Fprintf(&sb, `<rect class="surface" width="%d" height="%d"/>`, width, height)
-	fmt.Fprintf(&sb, `<text class="title" x="20" y="34" font-size="20" font-weight="700">%s</text>`, html.EscapeString(routeTitle(r)))
-	fmt.Fprintf(&sb, `<text class="label" x="20" y="58" font-size="13">%s</text>`, html.EscapeString(snapshotCaption(r)))
-
-	for i, d := range r.Directions {
-		top := 84 + i*blockHeight
-		fmt.Fprintf(&sb, `<text class="title" x="20" y="%d" font-size="16" font-weight="700">%s</text>`, top+18, html.EscapeString(d.Direction))
-		line1, line2 := headlineLines(d)
-		fmt.Fprintf(&sb, `<text class="label strong" x="20" y="%d" font-size="15">%s</text>`, top+40, html.EscapeString(line1))
-		fmt.Fprintf(&sb, `<text class="label" x="20" y="%d" font-size="14">%s</text>`, top+60, html.EscapeString(line2))
-		// Nest the strip and let it scale up 2x
-		strip := strings.Replace(stripSVG(d), `<svg class="strip"`, fmt.Sprintf(`<svg class="strip" x="0" y="%d" width="%d" height="%d"`, top+64, width, 2*STRIP_HEIGHT), 1)
-		sb.WriteString(strip)
-	}
-	sb.WriteString(`</svg>` + "\n")
 	return sb.String()
 }

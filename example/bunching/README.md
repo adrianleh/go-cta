@@ -21,27 +21,11 @@ go run ./example/bunching -synthetic      # simulated buses, no key needed
 - `/` lists all routes (searchable)
 - `/route/6` is the live view for #6, refreshed every 30 seconds. `/route/6,J14` shows several routes on one page (up to 4).
 - `/route/6/map` is the same route on a map (Leaflet and OpenStreetMap tiles, loaded from a CDN). Tap a bus for its gaps.
-- `/route/6/snapshot.svg` and `/route/6/snapshot.md` download the current view as a picture and a short quick read.
 
 Bus Tracker is only called for routes someone is viewing. Vehicle positions and predictions are cached for 30 seconds,
 route patterns for 6 hours and the route list for a day, so many viewers cost the same as one. A route that's open
 somewhere costs 1 vehicle request plus 1 prediction request per 10 buses every 30 seconds - about 11,500 requests a day
 for a route with 30 buses, so keep an eye on the daily limit if several routes stay open all day.
-
-## Snapshots
-
-To save a snapshot without running the server:
-
-```sh
-go run ./example/bunching -snapshot 6 -out .     # writes snapshot-6.svg and snapshot-6.md
-```
-
-A snapshot is one moment, labeled with its time. It's good for showing what bunching looks like, not for
-saying how bad it is on a route - for that you need many moments, see the logger below.
-
-Example (**synthetic** - simulated buses from `-synthetic`, not CTA data):
-
-![Synthetic snapshot of route 6](readme/snapshot-6-synthetic.svg)
 
 ## How it's computed
 

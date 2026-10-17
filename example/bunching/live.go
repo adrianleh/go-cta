@@ -62,16 +62,15 @@ type liveGap struct {
 }
 
 type liveDirection struct {
-	Direction   string
-	LengthFt    float64
-	StartName   string
-	EndName     string
-	Path        []cta.Position // the reference pattern, for the map
-	Buses       []liveBus      // in service first, furthest along first, then buses laying over at a terminal
-	Gaps        []liveGap      // front to back
-	SpeedMph    float64        // only used for estimated gaps
-	SpeedIsReal bool           // false when we fell back to DEFAULT_SPEED_MPH
-	Estimated   int            // number of estimated gaps
+	Direction string
+	LengthFt  float64
+	StartName string
+	EndName   string
+	Path      []cta.Position // the reference pattern, for the map
+	Buses     []liveBus      // in service first, furthest along first, then buses laying over at a terminal
+	Gaps      []liveGap      // front to back
+	SpeedMph  float64        // only used for estimated gaps
+	Estimated int            // number of estimated gaps
 
 	InService       int
 	BunchedPairs    int
@@ -120,7 +119,7 @@ func buildLiveDirection(ref *refPattern, buses []liveBus) liveDirection {
 	for i, b := range inService {
 		speeds[i] = b.SpeedMph
 	}
-	d.SpeedMph, d.SpeedIsReal = directionSpeed(speeds)
+	d.SpeedMph = directionSpeed(speeds)
 
 	minutes := make([]float64, 0, len(inService))
 	for i := 1; i < len(inService); i++ {
@@ -181,9 +180,9 @@ func predictedGap(ahead []stopPrediction, behind []stopPrediction) (float64, boo
 // One speed per direction: the average of the speeds the buses report right now. Averaged over many buses -
 // some stopped at a stop or a light, some cruising - that's roughly the average running speed including stops.
 // With too few buses, or a feed that reports all zeros, we fall back to DEFAULT_SPEED_MPH.
-func directionSpeed(speeds []int) (float64, bool) {
+func directionSpeed(speeds []int) float64 {
 	if len(speeds) < MIN_SPEED_SAMPLES {
-		return DEFAULT_SPEED_MPH, false
+		return DEFAULT_SPEED_MPH
 	}
 	total := 0
 	for _, s := range speeds {
@@ -191,9 +190,9 @@ func directionSpeed(speeds []int) (float64, bool) {
 	}
 	avg := float64(total) / float64(len(speeds))
 	if avg < MIN_SPEED_MPH {
-		return DEFAULT_SPEED_MPH, false
+		return DEFAULT_SPEED_MPH
 	}
-	return min(avg, MAX_SPEED_MPH), true
+	return min(avg, MAX_SPEED_MPH)
 }
 
 // Average wait for a rider who shows up at a random time.

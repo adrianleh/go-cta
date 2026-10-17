@@ -45,16 +45,16 @@ func TestBunchThreshold(t *testing.T) {
 }
 
 func TestDirectionSpeed(t *testing.T) {
-	if s, real := directionSpeed([]int{0, 12, 15, 9}); !real || s != 9 {
-		t.Errorf("expected measured 9 mph, got %f (%v)", s, real)
+	if s := directionSpeed([]int{0, 12, 15, 9}); s != 9 {
+		t.Errorf("expected measured 9 mph, got %f", s)
 	}
-	if s, real := directionSpeed([]int{12, 15}); real || s != DEFAULT_SPEED_MPH {
-		t.Errorf("expected default with too few buses, got %f (%v)", s, real)
+	if s := directionSpeed([]int{12, 15}); s != DEFAULT_SPEED_MPH {
+		t.Errorf("expected default with too few buses, got %f", s)
 	}
-	if s, real := directionSpeed([]int{0, 0, 0, 0}); real || s != DEFAULT_SPEED_MPH {
-		t.Errorf("expected default when nobody reports a speed, got %f (%v)", s, real)
+	if s := directionSpeed([]int{0, 0, 0, 0}); s != DEFAULT_SPEED_MPH {
+		t.Errorf("expected default when nobody reports a speed, got %f", s)
 	}
-	if s, _ := directionSpeed([]int{60, 60, 60}); s != MAX_SPEED_MPH {
+	if s := directionSpeed([]int{60, 60, 60}); s != MAX_SPEED_MPH {
 		t.Errorf("expected speed capped at %d, got %f", MAX_SPEED_MPH, s)
 	}
 }
@@ -89,7 +89,7 @@ func TestBuildLiveDirection(t *testing.T) {
 	if order != "abced" {
 		t.Errorf("expected front to back order abce then terminal d, got %s", order)
 	}
-	if !d.SpeedIsReal || d.SpeedMph != 10 {
+	if d.SpeedMph != 10 {
 		t.Errorf("expected measured 10 mph, got %f", d.SpeedMph)
 	}
 
@@ -177,14 +177,11 @@ func TestBuildLiveDirectionPredictionsAndFallback(t *testing.T) {
 	if !almostEqual(d.ExpectedWait, (1.5*1.5+15*15)/(2*16.5)) {
 		t.Errorf("unexpected expected wait %f", d.ExpectedWait)
 	}
-	if d.WorstGap.Behind != "c" || !strings.Contains(headline(d), "Worst case ~15.0 min") {
-		t.Errorf("expected the 15 minute estimated gap as worst case, got %q", headline(d))
+	if d.WorstGap.Behind != "c" || formatGap(d.WorstGap) != "~15.0" {
+		t.Errorf("expected the 15 minute estimated gap as worst case marked with ~, got %+v", d.WorstGap)
 	}
-	if !strings.Contains(gapList(d), "1.5 (bunched), ~15.0") {
-		t.Errorf("expected the estimated gap marked with ~, got %q", gapList(d))
-	}
-	if !strings.Contains(speedNote(d), "except 1 gap marked ~") {
-		t.Errorf("unexpected speed note %q", speedNote(d))
+	if formatGap(d.Gaps[0]) != "1.5" || !d.Gaps[0].Bunched {
+		t.Errorf("expected the predicted gap unmarked and bunched, got %+v", d.Gaps[0])
 	}
 }
 
@@ -242,12 +239,9 @@ func TestBuildLiveDirectionFewBuses(t *testing.T) {
 	if len(d.Gaps) != 1 || !math.IsNaN(d.ExpectedWait) {
 		t.Errorf("one gap isn't enough for a wait estimate: %+v", d)
 	}
-	if !strings.Contains(headline(d), "Too few buses") {
-		t.Errorf("unexpected headline %q", headline(d))
-	}
 	d = buildLiveDirection(straightRef(50000), nil)
-	if !strings.Contains(headline(d), "no buses") {
-		t.Errorf("unexpected headline %q", headline(d))
+	if d.InService != 0 || len(d.Gaps) != 0 || !math.IsNaN(d.ExpectedWait) {
+		t.Errorf("expected nothing for a route without buses, got %+v", d)
 	}
 }
 
@@ -317,13 +311,11 @@ func TestServer(t *testing.T) {
 	defer srv.Close()
 
 	cases := map[string]string{
-		"/":                     "Jackson Park Express (synthetic)",
-		"/route/6":              "expected wait if you arrive now",
-		"/route/6/snapshot.svg": "SYNTHETIC DATA",
-		"/route/6/snapshot.md":  "E[H²] / (2·E[H])",
-		"/route/6/map":          `id="map"`,
-		"/route/6/map.json":     `"bunchedPairs"`,
-		"/map.js":               "L.map",
+		"/":                 "Jackson Park Express (synthetic)",
+		"/route/6":          "expected wait if you arrive now",
+		"/route/6/map":      `id="map"`,
+		"/route/6/map.json": `"bunchedPairs"`,
+		"/map.js":           "L.map",
 	}
 	for path, want := range cases {
 		resp, err := http.Get(srv.URL + path)

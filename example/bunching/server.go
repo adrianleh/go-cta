@@ -48,8 +48,6 @@ type directionView struct {
 	WaitEven     string
 	WaitWorst    string
 	Strip        template.HTML
-	Gaps         string
-	SpeedNote    string
 }
 
 func newServer(source *liveSource) *http.ServeMux {
@@ -99,24 +97,6 @@ func newServer(source *liveSource) *http.ServeMux {
 		w.Header().Set("Content-Type", "text/javascript")
 		_, _ = w.Write([]byte(mapJS))
 	})
-	mux.HandleFunc("GET /route/{route}/snapshot.svg", func(w http.ResponseWriter, r *http.Request) {
-		live, _ := source.getLive(r.Context(), r.PathValue("route"))
-		if live == nil {
-			http.Error(w, "Couldn't reach Bus Tracker", http.StatusBadGateway)
-			return
-		}
-		w.Header().Set("Content-Type", "image/svg+xml")
-		_, _ = w.Write([]byte(snapshotSVG(live)))
-	})
-	mux.HandleFunc("GET /route/{route}/snapshot.md", func(w http.ResponseWriter, r *http.Request) {
-		live, _ := source.getLive(r.Context(), r.PathValue("route"))
-		if live == nil {
-			http.Error(w, "Couldn't reach Bus Tracker", http.StatusBadGateway)
-			return
-		}
-		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		_, _ = w.Write([]byte(snapshotMarkdown(live, "snapshot.svg")))
-	})
 	return mux
 }
 
@@ -152,8 +132,6 @@ func newRouteView(rt string, live *liveRoute, err error) routeView {
 			WaitEven:     formatMinutes(d.EvenSpacingWait),
 			WaitWorst:    formatGap(d.WorstGap),
 			Strip:        template.HTML(stripSVG(d)), // built from escaped strings in svg.go
-			Gaps:         gapList(d),
-			SpeedNote:    speedNote(d),
 		})
 	}
 	return v

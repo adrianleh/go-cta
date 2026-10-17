@@ -69,9 +69,7 @@
 <div id="live">
 {{range .Live}}
   <h1>{{.Title}}</h1>
-  <p class="muted">Updated {{.Updated}} · refreshes every 30 s ·
-    <a href="/route/{{.Route}}/snapshot.svg" download="snapshot-{{.Route}}.svg">snapshot SVG</a> ·
-    <a href="/route/{{.Route}}/snapshot.md" download="snapshot-{{.Route}}.md">quick read</a></p>
+  <p class="muted">Updated {{.Updated}} · refreshes every 30 s</p>
   <p class="views"><a href="/route/{{.Route}}" {{if not $.Map}}class="current"{{end}}>Strip</a><a href="/route/{{.Route}}/map" {{if $.Map}}class="current"{{end}}>Map</a></p>
   {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
   {{if .Unplaced}}<p class="note">{{.Unplaced}} bus(es) on a pattern we couldn't place are not shown.</p>{{end}}
@@ -96,7 +94,6 @@
     {{end}}
     {{if not $.Map}}
     {{.Strip}}
-    <p class="note">{{.Gaps}}{{if .Gaps}}. {{end}}{{.SpeedNote}}</p>
     {{end}}
   </section>
   {{else}}<p>No route patterns found for this route.</p>
