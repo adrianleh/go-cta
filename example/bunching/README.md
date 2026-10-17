@@ -18,9 +18,10 @@ go run ./example/bunching -addr :9000     # another port
 go run ./example/bunching -synthetic      # simulated buses, no key needed
 ```
 
-- `/` lists all routes (searchable)
+- `/` is the all-routes overview, see below. It has a search box that filters the table by route number or name.
 - `/route/6` is the live view for #6, refreshed every 30 seconds. `/route/6,J14` shows several routes on one page (up to 4).
 - `/route/6/map` is the same route on a map (Leaflet and OpenStreetMap tiles, loaded from a CDN). Tap a bus for its gaps.
+- `/overview` lists every route with a bus in service (both directions pooled): buses, buses bunched (the buses in a bunched cluster, which is 2 or more buses in a row), average wait, wait if evenly spaced and longest wait and longest ÷ average, sortable with `?sort=route|buses|bunched|wait|even|worst|factor`. A map above it shows every convoy as one line through its buses, labeled with its route number (and ×N from 3 buses up). It's a snapshot that refetches all routes (a couple hundred Bus Tracker requests, about a minute) only while someone has the page open and it's older than `-overview-every` (default 10m), so mind your daily request limit.
 
 Bus Tracker is only called for routes someone is viewing. Vehicle positions and predictions are cached for 30 seconds,
 route patterns for 6 hours and the route list for a day, so many viewers cost the same as one. A route that's open
@@ -40,7 +41,6 @@ for a route with 30 buses, so keep an eye on the daily limit if several routes s
   the average of the speeds the buses report right now (10 mph if fewer than 3 report a usable speed).
   Estimated gaps are drawn dashed and marked ~.
 - **Bunched.** A gap under 2 minutes, or under 25% of the median gap in that direction, whichever is larger.
-  The relative part matters on infrequent routes.
   Buses in a row with bunched gaps between them form one **bunched cluster**: three buses in a row are one cluster (shown with
   one "3 bunched" label on the strip and one line through them on the map), not two pairs.
   The relative part matters on infrequent routes.

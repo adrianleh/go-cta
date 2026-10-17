@@ -367,11 +367,11 @@ func TestLiveCache(t *testing.T) {
 }
 
 func TestServer(t *testing.T) {
-	srv := httptest.NewServer(newServer(newLiveSource(nil)))
+	srv := httptest.NewServer(newServer(newLiveSource(nil), time.Minute))
 	defer srv.Close()
 
 	cases := map[string]string{
-		"/":                 "Jackson Park Express (synthetic)",
+		"/":                 `id="map"`,
 		"/route/6":          "expected wait if you arrive now",
 		"/route/6/map":      `id="map"`,
 		"/route/6/map.json": `"convoys"`,

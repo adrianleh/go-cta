@@ -18,6 +18,7 @@ import (
 func main() {
 	addr := flag.String("addr", ":8080", "address to serve on")
 	synthetic := flag.Bool("synthetic", false, "use simulated buses instead of Bus Tracker")
+	overviewEvery := flag.Duration("overview-every", OVERVIEW_REFRESH_EVERY, "how often the all-routes page refetches every route while it's being viewed (Bus Tracker has a daily request limit)")
 	flag.Parse()
 
 	var client *cta.BusClient
@@ -32,7 +33,7 @@ func main() {
 	source := newLiveSource(client)
 
 	slog.Info("Serving", slog.String("addr", *addr), slog.Bool("synthetic", *synthetic))
-	if err := http.ListenAndServe(*addr, newServer(source)); err != nil {
+	if err := http.ListenAndServe(*addr, newServer(source, *overviewEvery)); err != nil {
 		slog.Error("Serving", slog.Any("err", err))
 		os.Exit(1)
 	}

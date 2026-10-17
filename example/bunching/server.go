@@ -3,13 +3,14 @@ package main
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"math"
 	"net/http"
+	"slices"
 	"strings"
-
-	"adrianlehmann.net/cta"
+	"time"
 )
 
 //go:embed page.html
@@ -20,13 +21,15 @@ var page = template.Must(template.New("page").Parse(pageHTML))
 //go:embed map.js
 var mapJS string
 
+//go:embed overview_map.js
+var overviewMapJS string
+
 type pageData struct {
 	Title     string
 	Synthetic bool
-	Routes    []cta.Route // home page
 	Live      []routeView // route page
 	Map       bool        // show the map instead of the strips
-	Error     string
+	Overview  *overviewView
 	Method    template.HTML
 }
 
@@ -51,16 +54,55 @@ type directionView struct {
 	Strip     template.HTML
 }
 
-func newServer(source *liveSource) *http.ServeMux {
+type overviewView struct {
+	Loading    bool // no snapshot yet
+	Refreshing bool
+	Done       int // routes fetched so far while refreshing
+	Total      int
+	Sort       string
+	Rows       []overviewRow
+}
+
+type overviewRow struct {
+	Route    string
+	Name     string
+	Buses    int
+	Bunched  int
+	Wait     string
+	WaitEven string
+	Worst    string
+	Factor   string
+}
+
+func newServer(source *liveSource, overviewEvery time.Duration) *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		routes, err := source.getRoutes(r.Context())
-		data := pageData{Title: "CTA bus bunching", Routes: routes, Synthetic: source.client == nil}
-		if err != nil {
-			slog.Error("Getting routes", slog.Any("err", err))
-			data.Error = "Couldn't load the route list from Bus Tracker. Try again in a minute."
+	ov := newOverviewSource(source, overviewEvery)
+	overviewPage := func(w http.ResponseWriter, r *http.Request) {
+		render(w, pageData{
+			Title:     "CTA bunching",
+			Synthetic: source.client == nil,
+			Overview:  newOverviewView(ov.get(), r.URL.Query().Get("sort")),
+		})
+	}
+	mux.HandleFunc("GET /{$}", overviewPage)
+	mux.HandleFunc("GET /overview", overviewPage)
+	mux.HandleFunc("GET /overview.json", func(w http.ResponseWriter, r *http.Request) {
+		st := ov.get()
+		convoys := []networkConvoy{}
+		if st.Snap != nil {
+			convoys = st.Snap.Convoys
 		}
-		render(w, data)
+		w.Header().Set("Content-Type", "application/json")
+		err := json.NewEncoder(w).Encode(map[string]any{
+			"convoys": convoys, "loading": st.Snap == nil, "refreshing": st.Refreshing, "done": st.Done, "total": st.Total,
+		})
+		if err != nil {
+			slog.Error("Encoding overview data", slog.Any("err", err))
+		}
+	})
+	mux.HandleFunc("GET /overview-map.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		_, _ = w.Write([]byte(overviewMapJS))
 	})
 	mux.HandleFunc("GET /route/{routes}", func(w http.ResponseWriter, r *http.Request) {
 		routes := parseRouteList(r.PathValue("routes"))
@@ -135,6 +177,33 @@ func newRouteView(rt string, live *liveRoute, err error) routeView {
 			WaitWorst: formatGap(d.WorstGap),
 			Strip:     template.HTML(stripSVG(d)), // built from escaped strings in svg.go
 		})
+	}
+	return v
+}
+
+func newOverviewView(st overviewStatus, sortBy string) *overviewView {
+	if sortBy == "" {
+		sortBy = DEFAULT_OVERVIEW_SORT
+	}
+	snap := st.Snap
+	v := &overviewView{Loading: snap == nil, Refreshing: st.Refreshing, Done: st.Done, Total: st.Total, Sort: sortBy}
+	if snap == nil {
+		return v
+	}
+	rows := slices.Clone(snap.Routes)
+	sortSummaries(rows, sortBy)
+	for _, s := range rows {
+		row := overviewRow{Route: s.Route, Name: s.Name, Buses: s.Buses, Bunched: s.BunchedBuses, Wait: "-", WaitEven: "-", Worst: "-", Factor: "-"}
+		if !math.IsNaN(s.Wait) {
+			row.Wait, row.WaitEven = formatMinutes(s.Wait), formatMinutes(s.WaitEven)
+		}
+		if f := s.worstFactor(); !math.IsNaN(f) {
+			row.Factor = fmt.Sprintf("%.1f×", f)
+		}
+		if !math.IsNaN(s.Worst) {
+			row.Worst = formatMinutes(s.Worst)
+		}
+		v.Rows = append(v.Rows, row)
 	}
 	return v
 }

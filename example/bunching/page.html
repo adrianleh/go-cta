@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}}</title>
-{{if .Map}}
+{{if or .Map .Overview}}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 {{end}}
@@ -28,9 +28,6 @@
   .error { border-left: 4px solid var(--bunched); padding: 4px 10px; }
   input { width: 100%; box-sizing: border-box; font-size: 1rem; padding: 10px; border: 1px solid var(--rule);
           border-radius: 6px; background: var(--surface); color: var(--text); }
-  #routes { list-style: none; padding: 0; }
-  #routes li a { display: block; padding: 10px 4px; border-bottom: 1px solid var(--rule); text-decoration: none; color: var(--text); }
-  #routes b { display: inline-block; min-width: 3.5em; }
   section.direction { border-top: 1px solid var(--rule); padding: 14px 0; }
   .map-page section.direction { padding: 6px 0; }
   .map-page h2 { display: inline; font-size: 1rem; }
@@ -54,14 +51,75 @@
   .views a.current { color: var(--text); font-weight: 700; text-decoration: none; }
   #map { height: 70vh; min-height: 320px; border-radius: 8px; margin: 8px 0; }
   .bus-arrow { background: none; border: none; }
+  body.wide { max-width: 1100px; }
+  table.overview { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  table.overview th, table.overview td { padding: 6px 8px; border-bottom: 1px solid var(--rule); text-align: right; }
+  table.overview th:first-child, table.overview td:first-child, table.overview th:nth-child(2), table.overview td:nth-child(2) { text-align: left; }
+  table.overview th a { color: var(--muted); text-decoration: none; }
+  table.overview th a.current { color: var(--text); text-decoration: underline; }
+  table.overview td a { text-decoration: none; }
+  table.overview td.hot { color: var(--bunched); font-weight: 700; }
+  #map-wrap { position: relative; margin: 8px 0; }
+  #map-wrap #map { margin: 0; }
+  #map-wrap.loading #map { opacity: 0.45; }
+  .status { position: absolute; z-index: 1000; display: flex; align-items: center; gap: 10px; background: var(--surface); color: var(--text);
+            border-radius: 8px; box-shadow: 0 1px 8px rgba(0,0,0,0.35); font-weight: 600; font-variant-numeric: tabular-nums; }
+  #status-text:empty { display: none; }
+  .status[hidden] { display: none; }
+  .status.big { inset: 0; margin: auto; width: fit-content; height: fit-content; padding: 16px 22px; font-size: 1.1rem; }
+  .status.small { top: 10px; right: 10px; padding: 8px 10px; font-size: 0.85rem; }
+  .spinner { width: 18px; height: 18px; flex: none; border: 3px solid var(--rule); border-top-color: var(--gap); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .route-label { background: none; border: none; }
+  .route-pill { display: inline-block; transform: translate(-50%, -50%); background: var(--bunched); color: #fff; font: 700 12px/1 sans-serif;
+                padding: 3px 6px; border-radius: 10px; border: 2px solid #fff; white-space: nowrap; }
   .legend span { display: inline-block; width: 18px; height: 6px; border-radius: 3px; vertical-align: middle; margin: 0 4px 0 10px; }
 </style>
 </head>
-<body{{if .Map}} class="map-page"{{end}}>
+<body class="{{if .Map}}map-page{{end}}{{if .Overview}} wide{{end}}">
 {{if .Synthetic}}<p class="synthetic">Synthetic data: these buses are simulated, not the CTA.</p>{{end}}
 
-{{if .Live}}
-<p><a href="/">← All routes</a></p>
+{{if .Overview}}
+<h1>CTA bunching</h1>
+<p class="muted">Every bunched cluster of buses across the network right now. Click one, or any row below, to open its route.</p>
+<p class="note legend"><span style="background: var(--bunched)"></span>bunched cluster, labeled with its route number</p>
+{{with .Overview}}
+<div id="map-wrap"{{if .Loading}} class="loading"{{end}}>
+  <div id="map"></div>
+  <div id="status" class="status {{if .Loading}}big{{else}}small{{end}}"{{if not (or .Loading .Refreshing)}} hidden{{end}} role="status">
+    <div class="spinner" aria-label="Loading"></div><span id="status-text">{{if .Total}}Loaded {{.Done}}/{{.Total}} routes{{end}}</span>
+  </div>
+</div>
+{{end}}
+<input id="q" type="search" placeholder="Search..." autocomplete="off">
+<div id="live">
+{{with .Overview}}
+{{if not .Loading}}
+  <table class="overview">
+    <tr>
+      <th><a href="?sort=route" {{if eq .Sort "route"}}class="current"{{end}}>Route</a></th><th></th>
+      <th><a href="?sort=buses" {{if eq .Sort "buses"}}class="current"{{end}}>Buses</a></th>
+      <th><a href="?sort=bunched" {{if eq .Sort "bunched"}}class="current"{{end}}>Buses bunched</a></th>
+      <th><a href="?sort=wait" {{if eq .Sort "wait"}}class="current"{{end}}>Average wait</a></th>
+      <th><a href="?sort=even" {{if eq .Sort "even"}}class="current"{{end}}>Wait if even</a></th>
+      <th><a href="?sort=worst" {{if eq .Sort "worst"}}class="current"{{end}}>Longest wait</a></th>
+      <th><a href="?sort=factor" {{if eq .Sort "factor"}}class="current"{{end}}>Longest ÷ average</a></th>
+    </tr>
+    {{range .Rows}}
+    <tr>
+      <td><a href="/route/{{.Route}}"><b>{{.Route}}</b></a></td><td><a href="/route/{{.Route}}">{{.Name}}</a></td>
+      <td>{{.Buses}}</td><td {{if .Bunched}}class="hot"{{end}}>{{.Bunched}}</td>
+      <td>{{.Wait}}</td><td>{{.WaitEven}}</td><td>{{.Worst}}</td><td>{{.Factor}}</td>
+    </tr>
+    {{end}}
+  </table>
+{{end}}
+{{end}}
+</div>
+<script src="/overview-map.js"></script>
+
+{{else if .Live}}
+<p><a href="/">← Map overview</a></p>
 {{if .Map}}
 <p class="note legend"><span style="background: var(--gap)"></span>bus <span style="background: var(--bunched)"></span>in a bunched cluster · arrows point the way each bus is heading · faded arrows are buses at a terminal · tap a bus for its gaps</p>
 {{else}}
@@ -104,28 +162,19 @@
 {{if .Map}}{{with index .Live 0}}<div id="map" data-route="{{.Route}}"></div>{{end}}<script src="/map.js"></script>{{end}}
 <details class="note"><summary>How this is computed</summary>{{.Method}}</details>
 
-{{else}}
-<h1>CTA bus bunching, live</h1>
-<p class="muted">Pick a route to see where its buses are right now, which ones are bunched, and what that does to your wait.</p>
-{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<input id="q" type="search" placeholder="Search routes, e.g. 6 or Jackson Park" autocomplete="off" autofocus>
-<ul id="routes">
-{{range .Routes}}<li><a href="/route/{{.RouteId}}"><b>{{.RouteId}}</b> {{.RouteName}}</a></li>
-{{end}}
-</ul>
 {{end}}
 
 <script>
-  // Filter the route list as you type
+  // Filter the overview table by route number or name as you type
   const q = document.getElementById("q");
-  if (q) {
-    q.addEventListener("input", () => {
-      const s = q.value.trim().toLowerCase();
-      for (const li of document.querySelectorAll("#routes li")) {
-        li.hidden = !li.textContent.toLowerCase().includes(s);
-      }
-    });
+  function applyFilter() {
+    const s = q ? q.value.trim().toLowerCase() : "";
+    for (const tr of document.querySelectorAll("table.overview tr")) {
+      const cells = tr.querySelectorAll("td");
+      if (cells.length) tr.hidden = !`${cells[0].textContent} ${cells[1].textContent}`.toLowerCase().includes(s);
+    }
   }
+  if (q) q.addEventListener("input", applyFilter);
 
   // Swap in fresh data every 30 seconds without reloading the page (the server caches for 30 s too)
   if (document.getElementById("live")) {
@@ -133,7 +182,10 @@
       try {
         const res = await fetch(location.href);
         const fresh = new DOMParser().parseFromString(await res.text(), "text/html").getElementById("live");
-        if (fresh) document.getElementById("live").replaceWith(fresh);
+        if (fresh) {
+          document.getElementById("live").replaceWith(fresh);
+          applyFilter();
+        }
       } catch (e) {
         // Offline for a moment - keep showing what we have
       }
