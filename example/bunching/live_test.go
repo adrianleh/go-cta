@@ -16,34 +16,6 @@ func almostEqual(a, b float64) bool {
 	return math.Abs(a-b) < 1e-9
 }
 
-func TestExpectedWait(t *testing.T) {
-	// Evenly spaced buses: wait is half the gap
-	if w := expectedWait([]float64{10, 10, 10}); !almostEqual(w, 5) {
-		t.Errorf("expected 5, got %f", w)
-	}
-	// Same two buses per 20 minutes but bunched: E[H^2] = (1 + 361) / 2 = 181, E[H] = 10, W = 9.05
-	if w := expectedWait([]float64{1, 19}); !almostEqual(w, 9.05) {
-		t.Errorf("expected 9.05, got %f", w)
-	}
-	if !math.IsNaN(expectedWait(nil)) {
-		t.Errorf("expected NaN for no gaps")
-	}
-}
-
-func TestBunchThreshold(t *testing.T) {
-	// Frequent route: the 2 minute rule wins
-	if th := bunchThreshold(6); th != 2 {
-		t.Errorf("expected 2, got %f", th)
-	}
-	// Infrequent route: 25% of a 20 minute median is 5 minutes
-	if th := bunchThreshold(20); th != 5 {
-		t.Errorf("expected 5, got %f", th)
-	}
-	if th := bunchThreshold(math.NaN()); th != 2 {
-		t.Errorf("expected 2 without a median, got %f", th)
-	}
-}
-
 func TestDirectionSpeed(t *testing.T) {
 	if s := directionSpeed([]int{0, 12, 15, 9}); s != 9 {
 		t.Errorf("expected measured 9 mph, got %f", s)

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"adrianlehmann.net/cta"
+	"adrianlehmann.net/cta/example/bunchinglib"
 )
 
 const (
@@ -96,8 +97,8 @@ func analyzeCmd(args []string) error {
 	fs.StringVar(&cfg.reportPath, "report", "bunching-report.md", "markdown report to write (empty to skip)")
 	fs.StringVar(&cfg.chartPath, "chart", "bunching-headways.svg", "SVG headway chart to write (empty to skip)")
 	fs.IntVar(&cfg.stops, "stops", 5, "number of reference stops per direction")
-	fs.Float64Var(&cfg.bunchMinutes, "bunch-minutes", 2, "a headway under this many minutes counts as bunched")
-	fs.Float64Var(&cfg.bunchFraction, "bunch-fraction", 0.25, "relative bunching: headway under this fraction of the median")
+	fs.Float64Var(&cfg.bunchMinutes, "bunch-minutes", bunchinglib.BunchMinutes, "a headway under this many minutes counts as bunched")
+	fs.Float64Var(&cfg.bunchFraction, "bunch-fraction", bunchinglib.BunchFraction, "relative bunching: headway under this fraction of the median")
 	fs.IntVar(&cfg.minHeadways, "min-headways", 30, "minimum headways for a group to make the quick read")
 	fs.DurationVar(&cfg.maxGap, "max-gap", 5*time.Minute, "drop headways spanning a data gap longer than this")
 	fs.DurationVar(&cfg.maxInterp, "max-interp", 10*time.Minute, "longest gap between two reports of a bus to interpolate across")

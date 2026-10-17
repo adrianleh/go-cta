@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"adrianlehmann.net/cta/example/bunchinglib"
 )
 
 type analyzerConfig struct {
@@ -157,9 +159,7 @@ func analyze(obs []Observation, patterns map[int]*PatternInfo, cfg analyzerConfi
 				continue
 			}
 			days := make(map[string]bool)
-			minutes := make([]float64, len(hs))
-			for i, h := range hs {
-				minutes[i] = h.minutes
+			for _, h := range hs {
 				days[h.at.In(chicago).Format(time.DateOnly)] = true
 			}
 			a.groups = append(a.groups, groupResult{
@@ -167,7 +167,7 @@ func analyze(obs []Observation, patterns map[int]*PatternInfo, cfg analyzerConfi
 				direction: rd.direction,
 				period:    period,
 				days:      len(days),
-				stats:     computeStats(minutes, cfg.bunchMinutes, cfg.bunchFraction),
+				stats:     computeStats(chains(rd.route, rd.direction, hs), bunchinglib.Rule{Minutes: cfg.bunchMinutes, Fraction: cfg.bunchFraction}),
 			})
 		}
 	}
@@ -214,7 +214,7 @@ func analyzeDirection(rd routeDirection, obs []Observation, patterns map[int]*Pa
 				crossings = append(crossings, t)
 			}
 		}
-		dr.headways = append(dr.headways, headways(crossings, gaps)...)
+		dr.headways = append(dr.headways, headways(stop.stopId, crossings, gaps)...)
 	}
 	return dr
 }

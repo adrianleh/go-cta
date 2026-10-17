@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"adrianlehmann.net/cta/example/bunchinglib"
 )
 
 // The all-routes view: one row per route with both directions pooled, and every bunched pair on one map.
@@ -66,9 +68,9 @@ func summarize(live *liveRoute) routeSummary {
 	if len(minutes) > 0 {
 		s.Worst = slices.Max(minutes)
 	}
-	if len(minutes) >= 2 {
-		s.Wait = expectedWait(minutes)
-		s.WaitEven = mean(minutes) / 2
+	if headways := bunchinglib.Headways(live.Route, "", minutes); headways.Count() >= 2 {
+		s.Wait = headways.ExpectedWait().Minutes()
+		s.WaitEven = headways.EvenSpacingWait().Minutes()
 	}
 	return s
 }

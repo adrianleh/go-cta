@@ -4,6 +4,9 @@ import (
 	"math"
 	"slices"
 	"time"
+
+	"adrianlehmann.net/cta"
+	"adrianlehmann.net/cta/example/bunchinglib"
 )
 
 // Observations of one vehicle running one pattern, ordered by time
@@ -87,13 +90,15 @@ func coverageGaps(polls []time.Time, maxGap time.Duration) []interval {
 }
 
 type headway struct {
+	stop    string
+	start   time.Time // when the first bus passed
 	at      time.Time // when the second bus passed
 	minutes float64
 }
 
 // Headways between consecutive crossings. A headway that overlaps a coverage gap is dropped -
 // we can't tell whether a bus went by while we weren't looking.
-func headways(crossings []time.Time, gaps []interval) []headway {
+func headways(stop string, crossings []time.Time, gaps []interval) []headway {
 	sorted := slices.Clone(crossings)
 	slices.SortFunc(sorted, func(a, b time.Time) int { return a.Compare(b) })
 	var hs []headway
@@ -102,7 +107,7 @@ func headways(crossings []time.Time, gaps []interval) []headway {
 		if overlapsAny(prev, cur, gaps) {
 			continue
 		}
-		hs = append(hs, headway{at: cur, minutes: cur.Sub(prev).Minutes()})
+		hs = append(hs, headway{stop: stop, start: prev, at: cur, minutes: cur.Sub(prev).Minutes()})
 	}
 	return hs
 }
@@ -116,6 +121,20 @@ func overlapsAny(start, end time.Time, gaps []interval) bool {
 	return false
 }
 
+// Headways in a row at one stop, where each one starts when the previous one ended. Dropped headways and
+// changes of stop break the chain, so a bunched run never spans a stretch we didn't see.
+func chains(route string, direction string, hs []headway) []cta.Headways {
+	var out []cta.Headways
+	for i, h := range hs {
+		if i == 0 || h.stop != hs[i-1].stop || !h.start.Equal(hs[i-1].at) {
+			out = append(out, cta.Headways{Route: route, Direction: direction})
+		}
+		c := &out[len(out)-1]
+		c.Gaps = append(c.Gaps, minutesToDuration(h.minutes))
+	}
+	return out
+}
+
 type HeadwayStats struct {
 	Count           int
 	MeanMinutes     float64
@@ -123,80 +142,57 @@ type HeadwayStats struct {
 	CV              float64 // coefficient of variation, stddev / mean
 	ExpectedWait    float64 // minutes, E[H^2] / (2 E[H])
 	EvenSpacingWait float64 // minutes, E[H] / 2
-	ShareUnderAbs   float64 // share of headways under the absolute threshold
-	ShareUnderRel   float64 // share of headways under the relative threshold (fraction of the median)
+	ThresholdMin    float64 // headways under this many minutes count as bunched
+	BunchedShare    float64 // share of headways that are bunched
+	Clusters        int     // runs of bunched headways in a row, each one a group of 2 or more buses
+	BunchedBuses    int     // buses in those clusters
 }
 
-// Average wait for a rider who shows up at a random time.
-// A rider lands in a headway with probability proportional to its length and then waits half of it on average,
-// so W = sum(h * h/2) / sum(h) = E[H^2] / (2 E[H]). For evenly spaced buses this reduces to E[H] / 2.
-func expectedWait(hs []float64) float64 {
-	var sum, sumSq float64
-	for _, h := range hs {
-		sum += h
-		sumSq += h * h
+// Same definitions as the live site: the wait comes from cta.Headways and bunching from bunchinglib.
+// The headways are chains of consecutive headways (see chains) and are pooled for everything but clusters.
+func computeStats(chains []cta.Headways, rule bunchinglib.Rule) HeadwayStats {
+	pooled := cta.Headways{}
+	for _, c := range chains {
+		pooled.Gaps = append(pooled.Gaps, c.Gaps...)
 	}
-	if sum == 0 {
-		return math.NaN()
+	if pooled.Count() == 0 {
+		nan := math.NaN()
+		return HeadwayStats{MeanMinutes: nan, MedianMinutes: nan, CV: nan, ExpectedWait: nan, EvenSpacingWait: nan, ThresholdMin: nan, BunchedShare: nan}
 	}
-	return sumSq / (2 * sum)
-}
+	m := pooled.Mean().Minutes()
+	var variance float64
+	for _, g := range pooled.Gaps {
+		variance += (g.Minutes() - m) * (g.Minutes() - m)
+	}
+	variance /= float64(pooled.Count())
 
-func mean(xs []float64) float64 {
-	if len(xs) == 0 {
-		return math.NaN()
+	threshold := rule.Threshold(pooled)
+	stats := HeadwayStats{
+		Count:           pooled.Count(),
+		MeanMinutes:     m,
+		MedianMinutes:   pooled.Median().Minutes(),
+		CV:              math.Sqrt(variance) / m,
+		ExpectedWait:    pooled.ExpectedWait().Minutes(),
+		EvenSpacingWait: pooled.EvenSpacingWait().Minutes(),
+		ThresholdMin:    threshold.Minutes(),
 	}
-	var sum float64
-	for _, x := range xs {
-		sum += x
-	}
-	return sum / float64(len(xs))
-}
-
-func median(xs []float64) float64 {
-	if len(xs) == 0 {
-		return math.NaN()
-	}
-	sorted := slices.Clone(xs)
-	slices.Sort(sorted)
-	n := len(sorted)
-	if n%2 == 1 {
-		return sorted[n/2]
-	}
-	return (sorted[n/2-1] + sorted[n/2]) / 2
-}
-
-func shareBelow(xs []float64, threshold float64) float64 {
-	if len(xs) == 0 {
-		return math.NaN()
-	}
-	count := 0
-	for _, x := range xs {
-		if x < threshold {
-			count++
+	bunchedGaps := 0
+	for _, c := range chains {
+		bunched := bunchinglib.Bunched(c, threshold)
+		for _, b := range bunched {
+			if b {
+				bunchedGaps++
+			}
+		}
+		for _, run := range bunchinglib.Convoys(bunched) {
+			stats.Clusters++
+			stats.BunchedBuses += run[1] - run[0] + 1
 		}
 	}
-	return float64(count) / float64(len(xs))
+	stats.BunchedShare = float64(bunchedGaps) / float64(pooled.Count())
+	return stats
 }
 
-func computeStats(hs []float64, bunchMinutes float64, bunchFraction float64) HeadwayStats {
-	m := mean(hs)
-	var variance float64
-	for _, h := range hs {
-		variance += (h - m) * (h - m)
-	}
-	if len(hs) > 0 {
-		variance /= float64(len(hs))
-	}
-	med := median(hs)
-	return HeadwayStats{
-		Count:           len(hs),
-		MeanMinutes:     m,
-		MedianMinutes:   med,
-		CV:              math.Sqrt(variance) / m,
-		ExpectedWait:    expectedWait(hs),
-		EvenSpacingWait: m / 2,
-		ShareUnderAbs:   shareBelow(hs, bunchMinutes),
-		ShareUnderRel:   shareBelow(hs, bunchFraction*med),
-	}
+func minutesToDuration(m float64) time.Duration {
+	return time.Duration(m * float64(time.Minute))
 }

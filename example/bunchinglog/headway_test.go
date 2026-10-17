@@ -4,6 +4,9 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"adrianlehmann.net/cta"
+	"adrianlehmann.net/cta/example/bunchinglib"
 )
 
 var t0 = time.Date(2026, time.October, 6, 17, 0, 0, 0, chicago) // a Tuesday, PM peak
@@ -16,27 +19,13 @@ func almostEqual(a, b float64) bool {
 	return math.Abs(a-b) < 1e-9
 }
 
-func TestExpectedWaitEvenSpacing(t *testing.T) {
-	// Evenly spaced buses: wait is half the headway
-	w := expectedWait([]float64{10, 10, 10, 10})
-	if !almostEqual(w, 5) {
-		t.Errorf("expected 5, got %f", w)
-	}
-}
-
-func TestExpectedWaitBunched(t *testing.T) {
-	// Same 2 buses per 20 minutes, but bunched: headways 1 and 19.
-	// E[H] = 10, E[H^2] = (1 + 361) / 2 = 181, W = 181 / 20 = 9.05
-	w := expectedWait([]float64{1, 19})
-	if !almostEqual(w, 9.05) {
-		t.Errorf("expected 9.05, got %f", w)
-	}
+func oneChain(minutes ...float64) []cta.Headways {
+	return []cta.Headways{bunchinglib.Headways("6", "Northbound", minutes)}
 }
 
 func TestExpectedWaitMatchesCVForm(t *testing.T) {
 	// W = E[H]/2 * (1 + CV^2) is the same formula written differently
-	hs := []float64{2, 7, 11, 4, 16, 9, 1, 12}
-	s := computeStats(hs, 2, 0.25)
+	s := computeStats(oneChain(2, 7, 11, 4, 16, 9, 1, 12), bunchinglib.DefaultRule)
 	alt := s.MeanMinutes / 2 * (1 + s.CV*s.CV)
 	if !almostEqual(s.ExpectedWait, alt) {
 		t.Errorf("E[H^2]/(2E[H]) = %f but E[H]/2 (1+CV^2) = %f", s.ExpectedWait, alt)
@@ -49,37 +38,41 @@ func TestExpectedWaitMatchesCVForm(t *testing.T) {
 	}
 }
 
-func TestExpectedWaitEmpty(t *testing.T) {
-	if !math.IsNaN(expectedWait(nil)) {
-		t.Errorf("expected NaN for no headways")
+func TestComputeStatsEmpty(t *testing.T) {
+	s := computeStats(nil, bunchinglib.DefaultRule)
+	if !math.IsNaN(s.ExpectedWait) || !math.IsNaN(s.MeanMinutes) || !math.IsNaN(s.BunchedShare) {
+		t.Errorf("expected NaN for no headways, got %+v", s)
 	}
 }
 
-func TestComputeStatsShares(t *testing.T) {
-	// Median is 10, so the relative threshold is 2.5 minutes
-	hs := []float64{1, 2, 2.4, 10, 10, 12, 14, 20}
-	s := computeStats(hs, 2, 0.25)
-	if s.Count != 8 {
-		t.Errorf("expected 8 headways, got %d", s.Count)
+func TestComputeStatsClusters(t *testing.T) {
+	// Pooled gaps 1, 2, 10, 10, 1.5, 20 have median 6, so the threshold is max(2, 1.5) = 2 minutes and 2 is not bunched.
+	// Chain one has a pair (gap 1), chain two has a pair (gap 1.5)
+	chains := []cta.Headways{bunchinglib.Headways("6", "Northbound", []float64{1, 2, 10}), bunchinglib.Headways("6", "Northbound", []float64{10, 1.5, 20})}
+	s := computeStats(chains, bunchinglib.DefaultRule)
+	if s.Count != 6 || !almostEqual(s.MedianMinutes, 6) || !almostEqual(s.ThresholdMin, 2) {
+		t.Fatalf("unexpected count/median/threshold %+v", s)
 	}
-	if !almostEqual(s.MedianMinutes, 10) {
-		t.Errorf("expected median 10, got %f", s.MedianMinutes)
+	if !almostEqual(s.BunchedShare, 2.0/6) || s.Clusters != 2 || s.BunchedBuses != 4 {
+		t.Errorf("expected 2 of 6 bunched in 2 clusters of 4 buses, got %+v", s)
 	}
-	// Under 2 is strict: 2 itself is not bunched
-	if !almostEqual(s.ShareUnderAbs, 1.0/8) {
-		t.Errorf("expected 1/8 under 2 min, got %f", s.ShareUnderAbs)
-	}
-	if !almostEqual(s.ShareUnderRel, 3.0/8) {
-		t.Errorf("expected 3/8 under 25%% of median, got %f", s.ShareUnderRel)
+	// Three buses in a row are one cluster of 3, not two pairs
+	s = computeStats(oneChain(1, 1, 10, 10, 10), bunchinglib.DefaultRule)
+	if s.Clusters != 1 || s.BunchedBuses != 3 {
+		t.Errorf("expected one cluster of 3 buses, got %+v", s)
 	}
 }
 
-func TestMedian(t *testing.T) {
-	if m := median([]float64{3, 1, 2}); m != 2 {
-		t.Errorf("expected 2, got %f", m)
+func TestChainsBreakOnDroppedHeadwaysAndStops(t *testing.T) {
+	hs := []headway{
+		{stop: "a", start: at(0), at: at(1), minutes: 1},
+		{stop: "a", start: at(1), at: at(3), minutes: 2},
+		{stop: "a", start: at(10), at: at(12), minutes: 2}, // the one from minute 3 to 10 was dropped
+		{stop: "b", start: at(12), at: at(13), minutes: 1}, // different stop
 	}
-	if m := median([]float64{4, 1, 3, 2}); m != 2.5 {
-		t.Errorf("expected 2.5, got %f", m)
+	cs := chains("6", "Northbound", hs)
+	if len(cs) != 3 || cs[0].Count() != 2 || cs[1].Count() != 1 || cs[2].Count() != 1 {
+		t.Errorf("unexpected chains %+v", cs)
 	}
 }
 
@@ -154,7 +147,7 @@ func TestHeadwaysDropGaps(t *testing.T) {
 	if len(gaps) != 1 {
 		t.Fatalf("expected one gap, got %v", gaps)
 	}
-	hs := headways(crossings, gaps)
+	hs := headways("a", crossings, gaps)
 	want := []float64{10, 1, 19} // 30 -> 60 spans the gap and is dropped
 	if len(hs) != len(want) {
 		t.Fatalf("expected %v, got %v", want, hs)
@@ -232,7 +225,7 @@ func TestAnalyzePoolsPatterns(t *testing.T) {
 		t.Fatalf("expected one PM peak group, got %+v", a.groups)
 	}
 	s := a.groups[0].stats
-	if !almostEqual(s.ShareUnderAbs, 0.5) || !almostEqual(s.ExpectedWait, (1+81)/20.0) {
+	if !almostEqual(s.BunchedShare, 0.5) || s.Clusters != 1 || !almostEqual(s.ExpectedWait, (1+81)/20.0) {
 		t.Errorf("unexpected stats %+v", s)
 	}
 }

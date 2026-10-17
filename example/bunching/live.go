@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"adrianlehmann.net/cta"
+	"adrianlehmann.net/cta/example/bunchinglib"
 )
 
 // Live view of one route: where every bus is right now along each direction's pattern,
@@ -25,13 +26,6 @@ const (
 	MIN_SPEED_SAMPLES = 3
 	TERMINAL_ZONE_FT  = 1000 // buses this close to either end are laying over, not in service on the strip
 	FEET_PER_MILE     = 5280
-)
-
-// Bunched means the gap to the bus ahead is under 2 minutes, or under 25% of the median gap in that direction,
-// whichever is larger. The relative part matters on infrequent routes, where 2 minutes is too strict.
-const (
-	BUNCH_MINUTES  = 2
-	BUNCH_FRACTION = 0.25
 )
 
 type stopPrediction struct {
@@ -74,19 +68,12 @@ type liveDirection struct {
 
 	InService       int
 	BunchedPairs    int
-	Convoys         [][2]int // see convoyRuns
+	Convoys         [][2]int // see bunchinglib.Convoys
 	BunchMinutes    float64  // threshold actually used
 	MedianGap       float64  // minutes
 	ExpectedWait    float64  // minutes, NaN with fewer than 2 gaps
 	EvenSpacingWait float64  // minutes, NaN with fewer than 2 gaps
 	WorstGap        liveGap  // the longest gap: the worst wait for a rider who just missed a bus, zero without gaps
-}
-
-func bunchThreshold(medianGap float64) float64 {
-	if math.IsNaN(medianGap) {
-		return BUNCH_MINUTES
-	}
-	return max(BUNCH_MINUTES, BUNCH_FRACTION*medianGap)
 }
 
 func feetToMinutes(ft float64, mph float64) float64 {
@@ -137,15 +124,18 @@ func buildLiveDirection(ref *refPattern, buses []liveBus) liveDirection {
 		minutes = append(minutes, m)
 	}
 
-	d.MedianGap = median(minutes)
-	d.BunchMinutes = bunchThreshold(d.MedianGap)
+	headways := bunchinglib.Headways("", d.Direction, minutes)
+	d.MedianGap = headways.Median().Minutes()
+	threshold := bunchinglib.DefaultRule.Threshold(headways)
+	d.BunchMinutes = threshold.Minutes()
+	bunched := bunchinglib.Bunched(headways, threshold)
 	for i := range d.Gaps {
-		if d.Gaps[i].Minutes < d.BunchMinutes {
+		if bunched[i] {
 			d.Gaps[i].Bunched = true
 			d.BunchedPairs++
 		}
 	}
-	d.Convoys = convoyRuns(d)
+	d.Convoys = bunchinglib.Convoys(bunched)
 
 	// The gap ahead of the lead bus and behind the last one aren't known, so they're not part of the wait
 	for _, g := range d.Gaps {
@@ -156,30 +146,11 @@ func buildLiveDirection(ref *refPattern, buses []liveBus) liveDirection {
 
 	d.ExpectedWait = math.NaN()
 	d.EvenSpacingWait = math.NaN()
-	if len(minutes) >= 2 {
-		d.ExpectedWait = expectedWait(minutes)
-		d.EvenSpacingWait = mean(minutes) / 2
+	if headways.Count() >= 2 {
+		d.ExpectedWait = headways.ExpectedWait().Minutes()
+		d.EvenSpacingWait = headways.EvenSpacingWait().Minutes()
 	}
 	return d
-}
-
-// Runs of consecutive bunched gaps, as [first gap, one past the last gap]. Gaps[i] is between in-service
-// buses i (ahead) and i+1 (behind), so a run [i, j) is the j-i+1 buses i..j.
-func convoyRuns(d liveDirection) [][2]int {
-	var runs [][2]int
-	for i := 0; i < len(d.Gaps); {
-		if !d.Gaps[i].Bunched {
-			i++
-			continue
-		}
-		j := i
-		for j < len(d.Gaps) && d.Gaps[j].Bunched {
-			j++
-		}
-		runs = append(runs, [2]int{i, j})
-		i = j
-	}
-	return runs
 }
 
 // Minutes between bus A (ahead) and bus B (behind) at the first of A's upcoming stops that B also has a
@@ -214,43 +185,4 @@ func directionSpeed(speeds []int) float64 {
 		return DEFAULT_SPEED_MPH
 	}
 	return min(avg, MAX_SPEED_MPH)
-}
-
-// Average wait for a rider who shows up at a random time.
-// A rider lands in a gap with probability proportional to its length and then waits half of it on average,
-// so W = sum(h * h/2) / sum(h) = E[H^2] / (2 E[H]). For evenly spaced buses this is just E[H] / 2.
-func expectedWait(hs []float64) float64 {
-	var sum, sumSq float64
-	for _, h := range hs {
-		sum += h
-		sumSq += h * h
-	}
-	if sum == 0 {
-		return math.NaN()
-	}
-	return sumSq / (2 * sum)
-}
-
-func mean(xs []float64) float64 {
-	if len(xs) == 0 {
-		return math.NaN()
-	}
-	var sum float64
-	for _, x := range xs {
-		sum += x
-	}
-	return sum / float64(len(xs))
-}
-
-func median(xs []float64) float64 {
-	if len(xs) == 0 {
-		return math.NaN()
-	}
-	sorted := slices.Clone(xs)
-	slices.Sort(sorted)
-	n := len(sorted)
-	if n%2 == 1 {
-		return sorted[n/2]
-	}
-	return (sorted[n/2-1] + sorted[n/2]) / 2
 }

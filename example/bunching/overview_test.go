@@ -78,7 +78,7 @@ func TestConvoyOfThreeIsOneClusterButTwoPairs(t *testing.T) {
 		{VehicleId: "d", PositionFt: 30 * minute, SpeedMph: 10, Latitude: 41.7, Longitude: -87.6},
 		{VehicleId: "e", PositionFt: 29 * minute, SpeedMph: 10, Latitude: 41.69, Longitude: -87.6},
 	})
-	if runs := convoyRuns(d); len(runs) != 2 || runs[0] != [2]int{0, 2} || runs[1] != [2]int{3, 4} {
+	if runs := d.Convoys; len(runs) != 2 || runs[0] != [2]int{0, 2} || runs[1] != [2]int{3, 4} {
 		t.Fatalf("unexpected runs %v (gaps %+v)", runs, d.Gaps)
 	}
 	live := &liveRoute{Route: "6", Directions: []liveDirection{d}}

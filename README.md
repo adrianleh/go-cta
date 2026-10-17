@@ -56,4 +56,5 @@ observed headways is in [`example/bunchinglog`](example/bunchinglog).
 ## AI acknowledgement
 
 The API client and the bunching logic were written without AI. The frontend code (HTML, JS, SVG rendering) was
-written with AI and reviewed by a human.
+written with AI and reviewed by a human. Unifying the site and the logging project (the shared headway and bunching
+code) was also done with AI.

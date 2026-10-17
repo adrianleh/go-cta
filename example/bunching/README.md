@@ -66,15 +66,17 @@ go run ./example/bunchinglog synth                              # a synthetic we
 
 The logger keeps going on API errors and rate limits (logs them and backs off up to 15 minutes) and can be restarted
 any time - it only ever appends. Headways that span a stretch with no data (logger down, no service) are dropped.
-Same definitions as above, except headways are real passing times at a stop, interpolated between position reports.
+The wait, bunched and cluster definitions are the same code as the site (`cta.Headways` and `example/bunchinglib`). The difference is that
+headways are real passing times at a stop, interpolated between position reports, with the median taken over a route, direction and
+time of day. `-bunch-minutes` and `-bunch-fraction` change the bunched rule.
 
 Example quick read (**synthetic** - `bunchinglog synth`, not CTA data):
 
 ```
 *** SYNTHETIC DATA - simulated buses, not a real finding ***
 
-- #6 Northbound, weekday PM peak (3-7pm): average observed wait 4.9 min, versus 4.1 min if the same buses were evenly spaced; 4% of arrivals came within 2 min of the previous bus. (703 headways over 5 days, median headway 8.3 min.)
-- #6 Southbound, weekday PM peak (3-7pm): average observed wait 4.9 min, versus 4.1 min if the same buses were evenly spaced; 5% of arrivals came within 2 min of the previous bus. (710 headways over 5 days, median headway 8.2 min.)
+- #6 Northbound, weekday PM peak (3-7pm): average observed wait 4.9 min, versus 4.1 min if the same buses were evenly spaced; 4% of headways were bunched (under 2.1 min), in 29 clusters. (703 headways over 5 days, median headway 8.3 min.)
+- #6 Southbound, weekday PM peak (3-7pm): average observed wait 4.9 min, versus 4.1 min if the same buses were evenly spaced; 5% of headways were bunched (under 2.1 min), in 35 clusters. (710 headways over 5 days, median headway 8.2 min.)
 ...
 ```
 
