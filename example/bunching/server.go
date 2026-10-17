@@ -51,6 +51,7 @@ type directionView struct {
 	WaitNow   string
 	WaitEven  string
 	WaitWorst string
+	WorstX    string // longest wait as a multiple of the wait if evenly spaced, e.g. "4.4×"
 	Strip     template.HTML
 }
 
@@ -175,6 +176,7 @@ func newRouteView(rt string, live *liveRoute, err error) routeView {
 			WaitNow:   formatMinutes(d.ExpectedWait),
 			WaitEven:  formatMinutes(d.EvenSpacingWait),
 			WaitWorst: formatGap(d.WorstGap),
+			WorstX:    worstVsEven(d),
 			Strip:     template.HTML(stripSVG(d)), // built from escaped strings in svg.go
 		})
 	}

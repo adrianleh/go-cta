@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -48,4 +49,12 @@ func bunchedSummary(d liveDirection) string {
 		noun = "cluster"
 	}
 	return fmt.Sprintf("%d bunched into %d %s", buses, len(d.Convoys), noun)
+}
+
+// The longest wait as a multiple of the wait if the same buses were evenly spaced, "" without an estimate
+func worstVsEven(d liveDirection) string {
+	if math.IsNaN(d.EvenSpacingWait) || d.EvenSpacingWait <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%.1f×", d.WorstGap.Minutes/d.EvenSpacingWait)
 }

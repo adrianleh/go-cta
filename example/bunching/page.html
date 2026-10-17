@@ -139,13 +139,13 @@
       <p class="headline">No buses in service.</p>
     {{else}}
       <p class="headline">{{.InService}} buses, <span {{if .Convoys}}class="bunched-count"{{end}}>{{.Bunched}}</span>.
-        {{if and $.Map .HasWait}}Average wait <b>≈ {{.WaitNow}} min</b> ({{.WaitEven}} if even), longest {{.WaitWorst}}.{{end}}</p>
+        {{if and $.Map .HasWait}}Average wait <b>≈ {{.WaitNow}} min</b> ({{.WaitEven}} if even), longest {{.WaitWorst}}{{if .WorstX}} ({{.WorstX}} if even){{end}}.{{end}}</p>
       {{if not $.Map}}
       {{if .HasWait}}
       <div class="wait">
         <div><div class="big">≈ {{.WaitNow}} min</div><div>average wait</div></div>
         <div class="even"><div class="big">{{.WaitEven}} min</div><div>if evenly spaced</div></div>
-        <div class="even"><div class="big">{{.WaitWorst}} min</div><div>longest wait</div></div>
+        <div class="even"><div class="big">{{.WaitWorst}} min</div><div>longest wait{{if .WorstX}} ({{.WorstX}} as if evenly spaced){{end}}</div></div>
       </div>
       {{else}}<p class="muted">Too few buses for a wait estimate.</p>{{end}}
       {{end}}

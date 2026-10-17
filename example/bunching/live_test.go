@@ -393,3 +393,14 @@ func TestServer(t *testing.T) {
 		}
 	}
 }
+
+func TestWorstVsEven(t *testing.T) {
+	// Wait if evenly spaced 5 min, longest gap 22 min: 4.4x
+	d := liveDirection{EvenSpacingWait: 5, WorstGap: liveGap{Minutes: 22}}
+	if got := worstVsEven(d); got != "4.4×" {
+		t.Errorf("expected 4.4×, got %q", got)
+	}
+	if got := worstVsEven(liveDirection{EvenSpacingWait: math.NaN()}); got != "" {
+		t.Errorf("expected nothing without an estimate, got %q", got)
+	}
+}
