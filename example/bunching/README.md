@@ -3,7 +3,7 @@
 A small website built on go-cta. Pick any CTA bus route and see each direction as a strip (or on a map) with every bus
 on it, the gaps between them, bunched clusters highlighted, and what that spacing does to your wait:
 
-> Right now: N buses, X bunched into Y clusters. Expected wait for a rider arriving now ≈ Y min vs Z min if evenly spaced. Worst case W min.
+> N buses, X bunched into Y clusters. Average wait ≈ Y min (Z if even), longest W.
 
 One Go server (standard library only), one HTML file plus a small `map.js`, no build step. Works on a phone.
 

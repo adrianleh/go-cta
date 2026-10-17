@@ -121,34 +121,33 @@
 {{else if .Live}}
 <p><a href="/">← Map overview</a></p>
 {{if .Map}}
-<p class="note legend"><span style="background: var(--gap)"></span>bus <span style="background: var(--bunched)"></span>in a bunched cluster · arrows point the way each bus is heading · faded arrows are buses at a terminal · tap a bus for its gaps</p>
+<p class="note legend"><span style="background: var(--bunched)"></span>bunched cluster · arrows show direction · faded: at a terminal · tap a bus for details</p>
 {{else}}
-<p class="note legend">Travel is left to right. <span style="background: var(--gap)"></span>gap <span style="background: var(--bunched)"></span>bunched gap and buses · dashed gaps are estimated · hollow dots are buses at a terminal</p>
+<p class="note legend"><span style="background: var(--bunched)"></span>bunched · dashed: estimated gap · hollow: at a terminal</p>
 {{end}}
 <div id="live">
 {{range .Live}}
   <h1>{{.Title}}</h1>
-  <p class="muted">Updated {{.Updated}} · refreshes every 30 s</p>
+  <p class="muted">Updated {{.Updated}}</p>
   <p class="views"><a href="/route/{{.Route}}" {{if not $.Map}}class="current"{{end}}>Strip</a><a href="/route/{{.Route}}/map" {{if $.Map}}class="current"{{end}}>Map</a></p>
   {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-  {{if .Unplaced}}<p class="note">{{.Unplaced}} bus(es) on a pattern we couldn't place are not shown.</p>{{end}}
+  {{if .Unplaced}}<p class="note">{{.Unplaced}} bus(es) not shown (unknown pattern).</p>{{end}}
   {{range .Directions}}
   <section class="direction">
     <h2>{{.Direction}}</h2>
     {{if eq .InService 0}}
-      <p class="headline">Right now: no buses in service.</p>
+      <p class="headline">No buses in service.</p>
     {{else}}
-      <p class="headline">Right now: {{.InService}} buses in service,
-        <span {{if .Convoys}}class="bunched-count"{{end}}>{{.Bunched}}</span>.
-        {{if and $.Map .HasWait}}Expected wait if you arrive now <b>≈ {{.WaitNow}} min</b> vs {{.WaitEven}} min if evenly spaced, worst case {{.WaitWorst}} min.{{end}}</p>
+      <p class="headline">{{.InService}} buses, <span {{if .Convoys}}class="bunched-count"{{end}}>{{.Bunched}}</span>.
+        {{if and $.Map .HasWait}}Average wait <b>≈ {{.WaitNow}} min</b> ({{.WaitEven}} if even), longest {{.WaitWorst}}.{{end}}</p>
       {{if not $.Map}}
       {{if .HasWait}}
       <div class="wait">
-        <div><div class="big">≈ {{.WaitNow}} min</div><div>expected wait if you arrive now</div></div>
-        <div class="even"><div class="big">{{.WaitEven}} min</div><div>if the same buses were evenly spaced</div></div>
-        <div class="even"><div class="big">{{.WaitWorst}} min</div><div>worst case, if you just missed one</div></div>
+        <div><div class="big">≈ {{.WaitNow}} min</div><div>average wait</div></div>
+        <div class="even"><div class="big">{{.WaitEven}} min</div><div>if evenly spaced</div></div>
+        <div class="even"><div class="big">{{.WaitWorst}} min</div><div>longest wait</div></div>
       </div>
-      {{else}}<p class="muted">Too few buses to estimate a wait.</p>{{end}}
+      {{else}}<p class="muted">Too few buses for a wait estimate.</p>{{end}}
       {{end}}
     {{end}}
     {{if not $.Map}}

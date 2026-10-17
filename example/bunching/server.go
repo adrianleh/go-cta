@@ -154,9 +154,9 @@ func newRouteView(rt string, live *liveRoute, err error) routeView {
 	v := routeView{Route: rt, Title: "#" + rt}
 	if err != nil {
 		// Details go to the server log only - visitors don't need them
-		v.Error = "Couldn't reach Bus Tracker just now."
+		v.Error = "Couldn't reach Bus Tracker."
 		if live != nil {
-			v.Error += " Showing the last data we got."
+			v.Error += " Showing the last data."
 		}
 	}
 	if live == nil {
@@ -208,14 +208,9 @@ func newOverviewView(st overviewStatus, sortBy string) *overviewView {
 	return v
 }
 
-const METHOD_HTML = template.HTML(`<p>Buses are ordered by distance along their direction's route pattern.
-Buses within 1000 ft of either end are treated as laying over (hollow dots) and left out.</p>
-<p><strong>Gap</strong> between a bus and the one behind it: from Bus Tracker predictions, the time the bus behind is predicted at
-the first upcoming stop both have a prediction for, minus the time the bus ahead is predicted there.
-If they share no predicted stop (big gaps can be longer than the prediction horizon), the gap is <strong>estimated</strong>
-from the distance and the average speed the buses report (shown dashed and marked ~).</p>
-<p><strong>Bunched</strong>: a gap under 2 minutes, or under 25% of the median gap, whichever is larger.
-Buses in a row with bunched gaps between them form one <strong>bunched cluster</strong>: three buses in a row are one cluster, not two pairs.</p>
-<p><strong>Worst case</strong>: the longest gap right now - how long you wait if you just missed the bus at the start of it.</p>
-<p><strong>Expected wait if you arrive now</strong>: E[H²] / (2·E[H]) over the current gaps H. You're more likely to show up during a long gap,
-so uneven spacing makes the average wait longer. <strong>If evenly spaced</strong>: E[H] / 2, the same buses spread out evenly.</p>`)
+const METHOD_HTML = template.HTML(`<p>Buses are ordered along the route pattern. Those within 1000 ft of an end are laying over and left out.</p>
+<p><strong>Gap</strong>: the bus behind's predicted arrival minus the bus ahead's, at the first stop both are predicted at.
+With no shared stop it's <strong>estimated</strong> from distance and average speed (dashed, marked ~).</p>
+<p><strong>Bunched</strong>: a gap under 2 min or 25% of the median gap, whichever is larger. Bunched gaps in a row form one cluster.</p>
+<p><strong>Average wait</strong>: E[H²] / (2·E[H]) over the gaps H, so uneven spacing makes it longer.
+<strong>If evenly spaced</strong>: E[H] / 2. <strong>Longest wait</strong>: the biggest gap.</p>`)

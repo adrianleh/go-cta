@@ -372,7 +372,7 @@ func TestServer(t *testing.T) {
 
 	cases := map[string]string{
 		"/":                 `id="map"`,
-		"/route/6":          "expected wait if you arrive now",
+		"/route/6":          "average wait",
 		"/route/6/map":      `id="map"`,
 		"/route/6/map.json": `"convoys"`,
 		"/map.js":           "L.map",
