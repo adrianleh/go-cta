@@ -71,36 +71,26 @@ func (p *Prediction) GetMinutesAwayAsInt() (uint64, error) {
 	return mins, nil
 }
 
-func (p *Prediction) GetUnixTimestamp() (int64, error) {
-	unixTime, err := strconv.ParseInt(p.Timestamp, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("parsing unix time: %w", err)
-	}
-	return unixTime, nil
-}
-
 func (p *Prediction) GetTimestamp() (time.Time, error) {
-	unixTime, err := p.GetUnixTimestamp()
-	if err != nil {
-		return time.Time{}, err
-	}
-	return unixTimeToTimeUnknownGranularity(unixTime), nil
+	return parseCtaBusTrackerTime(p.Timestamp)
 }
 
-func (p *Prediction) GetPredictedUnixTime() (int64, error) {
-	unixTime, err := strconv.ParseInt(p.PredictedTime, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("parsing predicted unix time: %w", err)
-	}
-	return unixTime, nil
+func (p *Prediction) GetUnixTimestamp() (int64, error) {
+	t, err := p.GetTimestamp()
+	return errMap(t, err, func(t time.Time) int64 {
+		return t.Unix()
+	})
 }
 
 func (p *Prediction) GetPredictedTime() (time.Time, error) {
-	unixTime, err := p.GetPredictedUnixTime()
-	if err != nil {
-		return time.Time{}, err
-	}
-	return unixTimeToTimeUnknownGranularity(unixTime), nil
+	return parseCtaBusTrackerTime(p.PredictedTime)
+}
+
+func (p *Prediction) GetPredictedUnixTime() (int64, error) {
+	t, err := p.GetPredictedTime()
+	return errMap(t, err, func(t time.Time) int64 {
+		return t.Unix()
+	})
 }
 
 func (p *Prediction) IsArrival() bool {

@@ -145,7 +145,7 @@ func synthPredictions(now time.Time) []cta.Prediction {
 				StopName:       pt.StopName,
 				Route:          SYNTH_ROUTE,
 				RouteDirection: t.pattern.RouteDirection,
-				PredictedTime:  strconv.FormatInt(at.Unix(), 10),
+				PredictedTime:  at.In(chicago).Format("20060102 15:04:05"),
 				Type:           cta.PREDICTION_TYPE_ARRIVAL,
 			})
 		}

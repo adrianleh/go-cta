@@ -173,6 +173,7 @@ func (s *liveSource) fetchPredictions(ctx context.Context, vehicles []cta.Vehicl
 	for _, p := range predictions {
 		at, err := p.GetPredictedTime()
 		if err != nil {
+			slog.Warn("Skipping unparseable prediction", slog.String("vehicle", p.VehicleId), slog.Any("err", err))
 			continue
 		}
 		byVehicle[p.VehicleId] = append(byVehicle[p.VehicleId], stopPrediction{StopId: p.StopId, At: at})

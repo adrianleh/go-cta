@@ -13,7 +13,7 @@ func TestGetPredictionsByVehicleIdsAllowingErrors(t *testing.T) {
 			t.Errorf("unexpected vid query %q", r.URL.Query().Get("vid"))
 		}
 		_, _ = w.Write([]byte(`{"bustime-response": {
-			"prd": [{"vid": "1", "stpid": "1425", "prdtm": "1768347725", "typ": "A"}],
+			"prd": [{"vid": "1", "stpid": "1425", "prdtm": "20260114 19:08:05", "typ": "A"}],
 			"error": [{"vid": "2", "msg": "No arrival times"}]
 		}}`))
 	}))
@@ -39,5 +39,20 @@ func TestGetPredictionsByVehicleIdsAllowingErrors(t *testing.T) {
 	// The strict version still fails on any error
 	if _, err := bc.GetPredictionsByVehicleIds(t.Context(), []string{"1", "2"}); err == nil {
 		t.Errorf("expected an error from the strict call")
+	}
+}
+
+func TestPredictionTimesUseBusTrackerFormat(t *testing.T) {
+	p := Prediction{Timestamp: "20261014 19:07:12", PredictedTime: "20261014 19:08:00"}
+	at, err := p.GetPredictedTime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := at.Format("2006-01-02 15:04:05 MST"); got != "2026-10-14 19:08:00 CDT" {
+		t.Errorf("got %s", got)
+	}
+	ts, err := p.GetTimestamp()
+	if err != nil || at.Sub(ts).Seconds() != 48 {
+		t.Errorf("timestamp %v err %v", ts, err)
 	}
 }
