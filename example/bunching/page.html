@@ -46,6 +46,7 @@
   .gap { stroke: var(--gap); }
   .gap.bunched { stroke: var(--bunched); }
   .bus { fill: var(--text); stroke: var(--surface); }
+  .bus.bunched { fill: var(--bunched); }
   .bus.terminal { fill: var(--surface); stroke: var(--muted); }
   .label { fill: var(--muted); }
   .label.strong { fill: var(--text); }
@@ -62,9 +63,9 @@
 {{if .Live}}
 <p><a href="/">← All routes</a></p>
 {{if .Map}}
-<p class="note legend"><span style="background: var(--gap)"></span>bus <span style="background: var(--bunched)"></span>bunched with the bus ahead · arrows point the way each bus is heading · faded arrows are buses at a terminal · tap a bus for its gaps</p>
+<p class="note legend"><span style="background: var(--gap)"></span>bus <span style="background: var(--bunched)"></span>in a bunched cluster · arrows point the way each bus is heading · faded arrows are buses at a terminal · tap a bus for its gaps</p>
 {{else}}
-<p class="note legend">Travel is left to right. <span style="background: var(--gap)"></span>gap <span style="background: var(--bunched)"></span>bunched gap · dashed gaps are estimated · hollow dots are buses at a terminal</p>
+<p class="note legend">Travel is left to right. <span style="background: var(--gap)"></span>gap <span style="background: var(--bunched)"></span>bunched gap and buses · dashed gaps are estimated · hollow dots are buses at a terminal</p>
 {{end}}
 <div id="live">
 {{range .Live}}
@@ -80,7 +81,7 @@
       <p class="headline">Right now: no buses in service.</p>
     {{else}}
       <p class="headline">Right now: {{.InService}} buses in service,
-        <span {{if .BunchedPairs}}class="bunched-count"{{end}}>{{.BunchedPairs}} bunched {{if eq .BunchedPairs 1}}pair{{else}}pairs{{end}}</span>.
+        <span {{if .Convoys}}class="bunched-count"{{end}}>{{.Bunched}}</span>.
         {{if and $.Map .HasWait}}Expected wait if you arrive now <b>≈ {{.WaitNow}} min</b> vs {{.WaitEven}} min if evenly spaced, worst case {{.WaitWorst}} min.{{end}}</p>
       {{if not $.Map}}
       {{if .HasWait}}

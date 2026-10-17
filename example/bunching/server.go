@@ -40,14 +40,15 @@ type routeView struct {
 }
 
 type directionView struct {
-	Direction    string
-	InService    int
-	BunchedPairs int
-	HasWait      bool
-	WaitNow      string
-	WaitEven     string
-	WaitWorst    string
-	Strip        template.HTML
+	Direction string
+	InService int
+	Convoys   int
+	Bunched   string // e.g. "4 bunched into 2 clusters"
+	HasWait   bool
+	WaitNow   string
+	WaitEven  string
+	WaitWorst string
+	Strip     template.HTML
 }
 
 func newServer(source *liveSource) *http.ServeMux {
@@ -124,14 +125,15 @@ func newRouteView(rt string, live *liveRoute, err error) routeView {
 	v.Unplaced = live.Unplaced
 	for _, d := range live.Directions {
 		v.Directions = append(v.Directions, directionView{
-			Direction:    d.Direction,
-			InService:    d.InService,
-			BunchedPairs: d.BunchedPairs,
-			HasWait:      !math.IsNaN(d.ExpectedWait),
-			WaitNow:      formatMinutes(d.ExpectedWait),
-			WaitEven:     formatMinutes(d.EvenSpacingWait),
-			WaitWorst:    formatGap(d.WorstGap),
-			Strip:        template.HTML(stripSVG(d)), // built from escaped strings in svg.go
+			Direction: d.Direction,
+			InService: d.InService,
+			Convoys:   len(d.Convoys),
+			Bunched:   bunchedSummary(d),
+			HasWait:   !math.IsNaN(d.ExpectedWait),
+			WaitNow:   formatMinutes(d.ExpectedWait),
+			WaitEven:  formatMinutes(d.EvenSpacingWait),
+			WaitWorst: formatGap(d.WorstGap),
+			Strip:     template.HTML(stripSVG(d)), // built from escaped strings in svg.go
 		})
 	}
 	return v
@@ -143,7 +145,8 @@ Buses within 1000 ft of either end are treated as laying over (hollow dots) and 
 the first upcoming stop both have a prediction for, minus the time the bus ahead is predicted there.
 If they share no predicted stop (big gaps can be longer than the prediction horizon), the gap is <strong>estimated</strong>
 from the distance and the average speed the buses report (shown dashed and marked ~).</p>
-<p><strong>Bunched</strong>: a gap under 2 minutes, or under 25% of the median gap, whichever is larger.</p>
+<p><strong>Bunched</strong>: a gap under 2 minutes, or under 25% of the median gap, whichever is larger.
+Buses in a row with bunched gaps between them form one <strong>bunched cluster</strong>: three buses in a row are one cluster, not two pairs.</p>
 <p><strong>Worst case</strong>: the longest gap right now - how long you wait if you just missed the bus at the start of it.</p>
 <p><strong>Expected wait if you arrive now</strong>: E[H²] / (2·E[H]) over the current gaps H. You're more likely to show up during a long gap,
 so uneven spacing makes the average wait longer. <strong>If evenly spaced</strong>: E[H] / 2, the same buses spread out evenly.</p>`)

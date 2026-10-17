@@ -1,9 +1,9 @@
 # Bus bunching, live
 
 A small website built on go-cta. Pick any CTA bus route and see each direction as a strip (or on a map) with every bus
-on it, the gaps between them, bunched pairs highlighted, and what that spacing does to your wait:
+on it, the gaps between them, bunched clusters highlighted, and what that spacing does to your wait:
 
-> Right now: N buses, X bunched pairs. Expected wait for a rider arriving now ≈ Y min vs Z min if evenly spaced. Worst case W min.
+> Right now: N buses, X bunched into Y clusters. Expected wait for a rider arriving now ≈ Y min vs Z min if evenly spaced. Worst case W min.
 
 One Go server (standard library only), one HTML file plus a small `map.js`, no build step. Works on a phone.
 
@@ -40,6 +40,9 @@ for a route with 30 buses, so keep an eye on the daily limit if several routes s
   the average of the speeds the buses report right now (10 mph if fewer than 3 report a usable speed).
   Estimated gaps are drawn dashed and marked ~.
 - **Bunched.** A gap under 2 minutes, or under 25% of the median gap in that direction, whichever is larger.
+  The relative part matters on infrequent routes.
+  Buses in a row with bunched gaps between them form one **bunched cluster**: three buses in a row are one cluster (shown with
+  one "3 bunched" label on the strip and one line through them on the map), not two pairs.
   The relative part matters on infrequent routes.
 - **Expected wait for a rider arriving now.** E[H²] / (2·E[H]) over the current gaps H. A rider is more likely to show
   up during a long gap than a short one, so uneven spacing makes the average wait longer even with the same number of buses.

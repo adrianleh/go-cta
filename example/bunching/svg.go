@@ -49,12 +49,9 @@ func stripSVG(d liveDirection) string {
 		}
 		fmt.Fprintf(&sb, `<line class="%s" x1="%.1f" x2="%.1f" y1="%d" y2="%d" stroke-width="6"%s><title>%s min gap</title></line>`,
 			class, x1, x2, STRIP_LINE_Y, STRIP_LINE_Y, dash, formatGap(g))
-		mid := (x1 + x2) / 2
-		// Bunched gaps are always labeled (they're short, so the label sits above with a tick). Others only if they fit.
-		if g.Bunched {
-			fmt.Fprintf(&sb, `<line class="gap bunched" x1="%.1f" x2="%.1f" y1="%d" y2="%d" stroke-width="1.5"/>`, mid, mid, STRIP_LINE_Y-20, STRIP_LINE_Y-6)
-			fmt.Fprintf(&sb, `<text class="label strong" x="%.1f" y="%d" font-size="10" font-weight="700" text-anchor="middle">bunched</text>`, mid, STRIP_LINE_Y-24)
-		} else if x2-x1 >= 26 {
+		// Bunched gaps are labeled once per cluster below. Others are labeled if they fit.
+		if !g.Bunched && x2-x1 >= 26 {
+			mid := (x1 + x2) / 2
 			label := formatWholeMinutes(g.Minutes) + "m"
 			if g.Estimated {
 				label = "~" + label
@@ -63,10 +60,27 @@ func stripSVG(d liveDirection) string {
 		}
 	}
 
-	for _, b := range d.Buses {
+	// One label per bunched cluster, centered over it with a tick: "bunched" for a pair, "3 bunched" for three in a row
+	inCluster := make(map[int]bool)
+	for _, run := range d.Convoys {
+		for i := run[0]; i <= run[1]; i++ {
+			inCluster[i] = true
+		}
+		mid := (stripX(d.Gaps[run[1]-1].FromFt, d.LengthFt) + stripX(d.Gaps[run[0]].ToFt, d.LengthFt)) / 2
+		label := "bunched"
+		if n := run[1] - run[0] + 1; n > 2 {
+			label = fmt.Sprintf("%d bunched", n)
+		}
+		fmt.Fprintf(&sb, `<line class="gap bunched" x1="%.1f" x2="%.1f" y1="%d" y2="%d" stroke-width="1.5"/>`, mid, mid, STRIP_LINE_Y-20, STRIP_LINE_Y-6)
+		fmt.Fprintf(&sb, `<text class="label strong" x="%.1f" y="%d" font-size="10" font-weight="700" text-anchor="middle">%s</text>`, mid, STRIP_LINE_Y-24, label)
+	}
+
+	for i, b := range d.Buses {
 		class := "bus"
 		if b.AtTerminal {
 			class = "bus terminal"
+		} else if inCluster[i] {
+			class = "bus bunched"
 		}
 		fmt.Fprintf(&sb, `<circle class="%s" cx="%.1f" cy="%d" r="5" stroke-width="2"><title>Bus %s to %s</title></circle>`,
 			class, stripX(b.PositionFt, d.LengthFt), STRIP_LINE_Y, html.EscapeString(b.VehicleId), html.EscapeString(b.Destination))

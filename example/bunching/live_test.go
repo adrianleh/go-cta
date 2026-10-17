@@ -194,21 +194,81 @@ func TestMapData(t *testing.T) {
 	}
 	r := &liveRoute{Route: "6", Directions: []liveDirection{buildLiveDirection(straightRef(40*minute), buses)}}
 	md := mapData(r)[0]
-	if len(md.Buses) != 3 || len(md.BunchedPairs) != 1 {
+	if len(md.Buses) != 3 || len(md.Convoys) != 1 {
 		t.Fatalf("unexpected map data %+v", md)
 	}
 	a, b, term := md.Buses[0], md.Buses[1], md.Buses[2]
-	if a.Bunched || a.GapAhead != "" || a.GapBehind != "1.0" {
+	// Both buses of the pair are in the cluster, including the lead one
+	if !a.Bunched || a.Convoy != 2 || a.BunchedAhead || a.GapAhead != "" || a.GapBehind != "1.0" {
 		t.Errorf("unexpected lead bus %+v", a)
 	}
-	if !b.Bunched || b.GapAhead != "1.0" || b.GapBehind != "" {
+	if !b.Bunched || b.Convoy != 2 || !b.BunchedAhead || b.GapAhead != "1.0" || b.GapBehind != "" {
 		t.Errorf("unexpected second bus %+v", b)
 	}
-	if !term.AtTerminal || term.Bunched || term.GapAhead != "" {
+	if !term.AtTerminal || term.Bunched || term.Convoy != 0 || term.GapAhead != "" {
 		t.Errorf("unexpected terminal bus %+v", term)
 	}
-	if md.BunchedPairs[0] != [2][2]float64{{41.8, -87.6}, {41.79, -87.6}} {
-		t.Errorf("unexpected bunched pair %v", md.BunchedPairs[0])
+	if len(md.Convoys[0]) != 2 || md.Convoys[0][0] != [2]float64{41.8, -87.6} || md.Convoys[0][1] != [2]float64{41.79, -87.6} {
+		t.Errorf("unexpected convoy line %v", md.Convoys[0])
+	}
+}
+
+// Gaps 1, 1, 18, 1: buses a, b, c in a row, then d and e a pair
+func threeThenTwo() liveDirection {
+	const minute = 880.0
+	return buildLiveDirection(straightRef(60*minute), []liveBus{
+		{VehicleId: "a", PositionFt: 50 * minute, SpeedMph: 10, Latitude: 41.8, Longitude: -87.6},
+		{VehicleId: "b", PositionFt: 49 * minute, SpeedMph: 10, Latitude: 41.79, Longitude: -87.6},
+		{VehicleId: "c", PositionFt: 48 * minute, SpeedMph: 10, Latitude: 41.78, Longitude: -87.6},
+		{VehicleId: "d", PositionFt: 30 * minute, SpeedMph: 10, Latitude: 41.7, Longitude: -87.6},
+		{VehicleId: "e", PositionFt: 29 * minute, SpeedMph: 10, Latitude: 41.69, Longitude: -87.6},
+	})
+}
+
+func TestMapDataConvoyOfThree(t *testing.T) {
+	md := mapData(&liveRoute{Route: "6", Directions: []liveDirection{threeThenTwo()}})[0]
+	if len(md.Convoys) != 2 || len(md.Convoys[0]) != 3 || len(md.Convoys[1]) != 2 {
+		t.Fatalf("expected one line through 3 buses and one through 2, got %v", md.Convoys)
+	}
+	want := []int{3, 3, 3, 2, 2}
+	for i, b := range md.Buses {
+		if !b.Bunched || b.Convoy != want[i] {
+			t.Errorf("bus %s: expected cluster of %d, got %+v", b.VehicleId, want[i], b)
+		}
+	}
+	// The middle bus is bunched with the one ahead and the one behind
+	if m := md.Buses[1]; !m.BunchedAhead || m.GapAhead != "~1.0" || m.GapBehind != "~1.0" {
+		t.Errorf("unexpected middle bus %+v", m)
+	}
+	// The big gap between the clusters is not bunched
+	if md.Buses[3].BunchedAhead {
+		t.Errorf("d is far behind c: %+v", md.Buses[3])
+	}
+}
+
+func TestBunchedSummary(t *testing.T) {
+	d := threeThenTwo()
+	if got := bunchedSummary(d); got != "5 bunched into 2 clusters" {
+		t.Errorf("unexpected summary %q", got)
+	}
+	// Just the pair
+	d.Convoys = d.Convoys[1:]
+	if got := bunchedSummary(d); got != "2 bunched into 1 cluster" {
+		t.Errorf("unexpected summary %q", got)
+	}
+	d.Convoys = nil
+	if got := bunchedSummary(d); got != "none bunched" {
+		t.Errorf("unexpected summary %q", got)
+	}
+}
+
+func TestStripLabelsClustersOnce(t *testing.T) {
+	svg := stripSVG(threeThenTwo())
+	if strings.Count(svg, ">3 bunched<") != 1 || strings.Count(svg, ">bunched<") != 1 {
+		t.Errorf("expected one label per cluster (3 bunched, bunched), got %s", svg)
+	}
+	if strings.Count(svg, `class="bus bunched"`) != 5 {
+		t.Errorf("expected all 5 buses marked as bunched")
 	}
 }
 
@@ -314,7 +374,7 @@ func TestServer(t *testing.T) {
 		"/":                 "Jackson Park Express (synthetic)",
 		"/route/6":          "expected wait if you arrive now",
 		"/route/6/map":      `id="map"`,
-		"/route/6/map.json": `"bunchedPairs"`,
+		"/route/6/map.json": `"convoys"`,
 		"/map.js":           "L.map",
 	}
 	for path, want := range cases {

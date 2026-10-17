@@ -1,4 +1,4 @@
-// The map view: each direction's pattern, buses at their GPS positions pointing the way they're heading, bunched pairs joined by a red line.
+// The map view: each direction's pattern, buses at their GPS positions pointing the way they're heading, each bunched cluster joined by a red line.
 // Redraws from /route/<route>/map.json every 30 seconds.
 const mapEl = document.getElementById("map");
 const style = getComputedStyle(document.documentElement);
@@ -21,7 +21,8 @@ map.on("popupclose", () => (openVid = null));
 function popupText(direction, bus) {
   const lines = [`<b>Bus ${bus.vid}</b>`, direction];
   if (bus.terminal) lines.push("At a terminal");
-  if (bus.gapAhead) lines.push(`${bus.gapAhead} min behind the bus ahead${bus.bunched ? " (bunched)" : ""}`);
+  if (bus.convoy) lines.push(`<b>In a cluster of ${bus.convoy} bunched buses</b>`);
+  if (bus.gapAhead) lines.push(`${bus.gapAhead} min behind the bus ahead${bus.bunchedAhead ? " (bunched)" : ""}`);
   if (bus.gapBehind) lines.push(`${bus.gapBehind} min ahead of the bus behind`);
   if (`${bus.gapAhead ?? ""}${bus.gapBehind ?? ""}`.includes("~")) lines.push("~ estimated from distance");
   return lines.join("<br>");
@@ -46,8 +47,8 @@ function draw(directions) {
       L.polyline(d.path, { color: colors.muted, weight: 4, opacity: 0.5 }).addTo(layer);
       bounds.push(...d.path);
     }
-    for (const pair of d.bunchedPairs) {
-      L.polyline(pair, { color: colors.bunched, weight: 8, opacity: 0.8 }).addTo(layer);
+    for (const convoy of d.convoys) {
+      L.polyline(convoy, { color: colors.bunched, weight: 8, opacity: 0.8 }).addTo(layer);
     }
     for (const bus of d.buses) {
       const color = bus.bunched ? colors.bunched : bus.terminal ? colors.muted : colors.bus;

@@ -74,11 +74,12 @@ type liveDirection struct {
 
 	InService       int
 	BunchedPairs    int
-	BunchMinutes    float64 // threshold actually used
-	MedianGap       float64 // minutes
-	ExpectedWait    float64 // minutes, NaN with fewer than 2 gaps
-	EvenSpacingWait float64 // minutes, NaN with fewer than 2 gaps
-	WorstGap        liveGap // the longest gap: the worst wait for a rider who just missed a bus, zero without gaps
+	Convoys         [][2]int // see convoyRuns
+	BunchMinutes    float64  // threshold actually used
+	MedianGap       float64  // minutes
+	ExpectedWait    float64  // minutes, NaN with fewer than 2 gaps
+	EvenSpacingWait float64  // minutes, NaN with fewer than 2 gaps
+	WorstGap        liveGap  // the longest gap: the worst wait for a rider who just missed a bus, zero without gaps
 }
 
 func bunchThreshold(medianGap float64) float64 {
@@ -144,6 +145,7 @@ func buildLiveDirection(ref *refPattern, buses []liveBus) liveDirection {
 			d.BunchedPairs++
 		}
 	}
+	d.Convoys = convoyRuns(d)
 
 	// The gap ahead of the lead bus and behind the last one aren't known, so they're not part of the wait
 	for _, g := range d.Gaps {
@@ -159,6 +161,25 @@ func buildLiveDirection(ref *refPattern, buses []liveBus) liveDirection {
 		d.EvenSpacingWait = mean(minutes) / 2
 	}
 	return d
+}
+
+// Runs of consecutive bunched gaps, as [first gap, one past the last gap]. Gaps[i] is between in-service
+// buses i (ahead) and i+1 (behind), so a run [i, j) is the j-i+1 buses i..j.
+func convoyRuns(d liveDirection) [][2]int {
+	var runs [][2]int
+	for i := 0; i < len(d.Gaps); {
+		if !d.Gaps[i].Bunched {
+			i++
+			continue
+		}
+		j := i
+		for j < len(d.Gaps) && d.Gaps[j].Bunched {
+			j++
+		}
+		runs = append(runs, [2]int{i, j})
+		i = j
+	}
+	return runs
 }
 
 // Minutes between bus A (ahead) and bus B (behind) at the first of A's upcoming stops that B also has a

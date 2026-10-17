@@ -32,3 +32,20 @@ func formatGap(g liveGap) string {
 	}
 	return formatMinutes(g.Minutes)
 }
+
+// "4 bunched into 2 clusters": the buses in bunched clusters, and how many clusters they form.
+// Three buses in a row are one cluster of 3, not two pairs.
+func bunchedSummary(d liveDirection) string {
+	if len(d.Convoys) == 0 {
+		return "none bunched"
+	}
+	buses := 0
+	for _, run := range d.Convoys {
+		buses += run[1] - run[0] + 1
+	}
+	noun := "clusters"
+	if len(d.Convoys) == 1 {
+		noun = "cluster"
+	}
+	return fmt.Sprintf("%d bunched into %d %s", buses, len(d.Convoys), noun)
+}
